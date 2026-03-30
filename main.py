@@ -39,8 +39,8 @@ uc.Chrome.__del__ = _patched_del
 #from svetofor_parser import svetofor
 #from magazinnoff_parser import magazinnoff
 #from cataloged_parser import cataloged
-#from vkusvill_parser import vkusvill
-from azbuka_vkusa_parser import av
+from vkusvill_parser import vkusvill
+#from azbuka_vkusa_parser import av
 
 from parsers_core.utils import write_excel
 from config import table_name, parsers #, TelegramBot
@@ -76,8 +76,8 @@ parsers_funcs = {
 #    "https://dixy.ru/": dixy,
 #   "https://www.magazinnoff.ru/": magazinnoff,
 #   "https://www.cataloged.ru/": cataloged,
-#    "https://vkusvill.ru/": vkusvill,
-    "https://www.av.ru/": av,
+   "https://vkusvill.ru/": vkusvill,
+# "https://www.av.ru/": av,
 }
 
 def write_log(message, filename):

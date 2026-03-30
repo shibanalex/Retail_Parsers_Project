@@ -2,7 +2,6 @@ import time
 import random
 from urllib.parse import quote
 
-# Глобальный конфиг
 try:
     import config
 except ImportError:
@@ -10,8 +9,7 @@ except ImportError:
 
 from parsers_core.utils import update_retail_points
 
-# Локальные импорты
-from .vkusvill_config import RETAIL_NAME_GLOBAL, VKUSVILL_CITIES_MAP
+from .vkusvill_config import RETAIL_NAME_GLOBAL, VKUSVILL_CITIES_MAP, VKUSVILL_VALID_ADDRESSES
 from .stealth_session import _init_uc_driver
 from .vkusvill_utils import set_city_address, filter_dynamic_query, parse_html_to_items
 
@@ -38,8 +36,9 @@ def get_all_data(cities_list=None, search_list=None, brand_list=None):
             driver.get(f"https://{subdomain}vkusvill.ru/")
             time.sleep(4)
             
-            # Устанавливаем адрес
             set_city_address(driver, city)
+            
+            safe_address = VKUSVILL_VALID_ADDRESSES.get(city, f"{city}, улица Ленина, 1")
             
             city_items = []
             
@@ -60,7 +59,8 @@ def get_all_data(cities_list=None, search_list=None, brand_list=None):
                             print("   🛑 Обнаружен антибот Qrator! Ждем 10 сек...")
                             time.sleep(10)
                         
-                        items_on_page = parse_html_to_items(driver.page_source, city, brands_to_filter)
+                        # Передаем safe_address в парсер
+                        items_on_page = parse_html_to_items(driver.page_source, safe_address, brands_to_filter)
                         
                         if not items_on_page:
                             break
@@ -78,9 +78,8 @@ def get_all_data(cities_list=None, search_list=None, brand_list=None):
                         print(f"   ❌ Ошибка загрузки страницы {page}: {e}")
                         break
                 
-                # Фильтруем от мусора
                 clean_items = filter_dynamic_query(query_items_raw, query)
-                print(f"   🧹 Очищено от мусора: осталось {len(clean_items)} из {len(query_items_raw)}")
+                print(f"    Осталось {len(clean_items)} из {len(query_items_raw)}")
                 
                 city_items.extend(clean_items)
 

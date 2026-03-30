@@ -23,7 +23,8 @@ def _init_uc_driver(headless: bool = False, locale: str = "ru-RU", proxy=None):
         driver = uc.Chrome(
             options=options,
             headless=headless,
-            use_subprocess=True
+            use_subprocess=True,
+            version_main=146
         )
     except Exception as e:
         print(f"Ошибка запуска Chrome: {e}")

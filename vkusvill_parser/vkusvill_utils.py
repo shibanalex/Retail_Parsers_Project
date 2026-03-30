@@ -5,7 +5,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-from .vkusvill_config import VKUSVILL_VALID_ADDRESSES
+from .vkusvill_config import VKUSVILL_VALID_ADDRESSES, RETAIL_NAME_GLOBAL
 
 def set_city_address(driver, city_name):
     """Устанавливает реальный адрес доставки, чтобы разблокировать остатки."""
@@ -76,7 +76,6 @@ def set_city_address(driver, city_name):
 
 
 def get_brand(name, brand_list):
-    """Умное извлечение бренда из названия товара"""
     name_lower = name.lower()
     if brand_list:
         for b in brand_list:
@@ -89,11 +88,10 @@ def get_brand(name, brand_list):
     ]
     for b in known_brands:
         if b.lower() in name_lower: return b
-    return "ВкусВилл"
+    return RETAIL_NAME_GLOBAL
 
 
 def filter_dynamic_query(items, query):
-    """Строгий динамический фильтр. Отсекает мусор."""
     if not items: return []
     query_words = [w.strip(".,!-") for w in query.lower().split()]
     filtered_items = []
@@ -118,8 +116,7 @@ def filter_dynamic_query(items, query):
     return filtered_items
 
 
-def parse_html_to_items(html_source, city_name, brand_list):
-    """Парсит HTML страницу поиска ВкусВилл"""
+def parse_html_to_items(html_source, safe_address, brand_list):
     soup = BeautifulSoup(html_source, "html.parser")
     cards = soup.find_all("div", class_="ProductCard")
     parsed_items = []
@@ -132,6 +129,17 @@ def parse_html_to_items(html_source, city_name, brand_list):
             name = name_tag.text.strip().replace('\xa0', ' ')
             url = "https://vkusvill.ru" + name_tag.get("href", "")
             brand = get_brand(name, brand_list)
+
+            store_type = "Даркстор" # Дефолт
+            labels = card.find_all("div", class_="ProductCardLabel__Col")
+            for label in labels:
+                lbl_text = label.text.strip().lower()
+                if "супермаркет" in lbl_text:
+                    store_type = "Супермаркет"
+                elif "микромаркет" in lbl_text:
+                    store_type = "Микромаркет"
+                elif "кафе" in lbl_text:
+                    store_type = "Кафе"
 
             img_tag = card.find("img", class_="ProductCard__imageImg")
             photo_url = img_tag.get("data-src") or img_tag.get("src") if img_tag else None
@@ -156,7 +164,6 @@ def parse_html_to_items(html_source, city_name, brand_list):
             weight_tag = card.find("div", class_="ProductCard__weight")
             weight = weight_tag.text.strip().replace('\xa0', ' ') if weight_tag else None
 
-            # ОСТАТОК
             stock = -1
             q_input = card.find("input", class_="js-delivery__product__q")
             if q_input and q_input.get("data-max"):
@@ -186,9 +193,9 @@ def parse_html_to_items(html_source, city_name, brand_list):
 
             parsed_items.append({
                 "Номер": 0,
-                "Сеть": city_name, 
-                "Тип магазина": "Магазин/Дарксторы",
-                "Адрес Торговой точки": "", 
+                "Сеть": RETAIL_NAME_GLOBAL, 
+                "Тип магазина": store_type,
+                "Адрес Торговой точки": safe_address, 
                 "Бренд": brand,
                 "Название продукта": name,
                 "Цена": price,

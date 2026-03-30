@@ -1,15 +1,14 @@
 import sys
 import os
 
-# Подключаем корень проекта, чтобы работал импорт из config и parsers_core
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from config import cities, search_req
+from config import cities, search_req, parsers
 from parsers_core.utils import update_retail_points
 from .browser import get_browser
 from .av_utils import set_city, get_product_links, parse_product
 
-RETAIL_NAME = "Азбука Вкуса"
+RETAIL_NAME = parsers.get("https://av.ru/", "Азбука Вкуса")
 
 def get_all_data():
     driver = get_browser()
@@ -17,7 +16,6 @@ def get_all_data():
 
     try:
         for city in cities:
-            # Азбука Вкуса представлена в основном в Москве и Спб.
             if city not in ["Москва", "Санкт-Петербург", "Питер"]:
                 print(f"[{RETAIL_NAME}] Пропуск города {city} (не поддерживается сайтом).")
                 continue
@@ -28,20 +26,18 @@ def get_all_data():
             if not set_city(driver, actual_city_name):
                 continue
             
-            # Уникальные торговые точки, найденные в ходе парсинга
             unique_stores = set()
 
             for query in search_req:
                 print(f"[{RETAIL_NAME}] 🔎 Парсинг запроса: '{query}'...")
                 
-                # 1. Получаем ссылки на все товары по запросу
                 product_links = get_product_links(driver, query)
-                print(f"[{RETAIL_NAME}] Найдено {len(product_links)} товаров по запросу '{query}'.")
+                print(f"[{RETAIL_NAME}] Найдено {len(product_links)} целевых товаров по запросу '{query}'.")
 
-                # 2. Переходим в каждый товар и собираем детали + наличие
                 for i, link in enumerate(product_links, 1):
                     print(f"  [{i}/{len(product_links)}] Парсим товар: {link}")
-                    product_data_list = parse_product(driver, link, actual_city_name)
+                    
+                    product_data_list = parse_product(driver, link, RETAIL_NAME)
                     
                     for item in product_data_list:
                         if item["Адрес Торговой точки"]:
@@ -49,7 +45,6 @@ def get_all_data():
                             
                     all_data.extend(product_data_list)
 
-            # Обновляем статистику по количеству торговых точек (как требует твоя архитектура)
             if unique_stores:
                 update_retail_points(RETAIL_NAME, actual_city_name, len(unique_stores))
 
@@ -58,7 +53,6 @@ def get_all_data():
     finally:
         driver.quit()
 
-    # Заполняем поле "Номер" по порядку
     for idx, row in enumerate(all_data, 1):
         row["Номер"] = idx
 

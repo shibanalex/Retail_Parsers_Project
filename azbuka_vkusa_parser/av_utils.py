@@ -85,7 +85,6 @@ def get_product_links(driver, query):
                 
             title = title_elem.text.strip()
             
-            # ФИЛЬТРАЦИЯ
             if main_keyword and main_keyword not in title.lower():
                 continue
                 
@@ -106,7 +105,19 @@ def get_product_links(driver, query):
 
     return list(links)
 
-def parse_product(driver, url, city_name):
+def get_store_type(address):
+    """Определение типа магазина по адресу"""
+    addr_lower = address.lower()
+    if "интернет-магазин" in addr_lower or "av.ru" in addr_lower:
+        return "Интернет-магазин"
+    elif "daily" in addr_lower:
+        return "Минимаркет"
+    elif "энотека" in addr_lower:
+        return "Винотека"
+    else:
+        return "Супермаркет"
+
+def parse_product(driver, url, retail_name):
     driver.get(url)
     time.sleep(2)
     
@@ -125,21 +136,33 @@ def parse_product(driver, url, city_name):
 
     soup = BeautifulSoup(driver.page_source, 'html.parser')
 
+    # Название
     name_elem = soup.select_one("[data-testid='product-name']")
     name = name_elem.text.strip() if name_elem else ""
 
-    brand_match = re.search(r'«(.*?)»', name)
-    brand = brand_match.group(1).strip() if brand_match else "Азбука Вкуса"
+    # Бренд из таблицы атрибутов
+    brand = "Азбука Вкуса" # Дефолтное значение
+    info_items = soup.select(".product-about-info_table_item")
+    for item in info_items:
+        key_elem = item.select_one(".product-about-info_table_item_name")
+        if key_elem and "Бренд" in key_elem.text:
+            val_elem = item.select_one(".product-about-info_table_item_value")
+            if val_elem:
+                brand = val_elem.text.strip()
+            break
 
+    # Артикул (GTIN)
     art_elem = soup.select_one(".product-cart-header__code")
     product_id = re.sub(r'\D', '', art_elem.text.strip()) if art_elem else ""
 
+    # Вес (отрезаем штуки "1 шт, 1 кг" -> "1 кг")
     weight_elem = soup.select_one("[data-testid='product-measure']")
     weight = ""
     if weight_elem:
         raw_weight = weight_elem.text.strip()
         weight = raw_weight.split(',')[-1].strip()
 
+    # Рейтинг
     rating_elem = soup.select_one(".stars_cnt")
     rating = None
     if rating_elem:
@@ -158,7 +181,7 @@ def parse_product(driver, url, city_name):
     if photo_url.startswith('/'):
         photo_url = f"https://av.ru{photo_url}"
 
-
+    # Цены
     promo_price = None
     current_price = None
     price_box = soup.select_one(".product-cart-special_main")
@@ -172,6 +195,7 @@ def parse_product(driver, url, city_name):
             promo_price = current_price
             current_price = clean_price(old_price_elem.text)
 
+    # Парсинг остатков по магазинам
     has_stock_data = False
     try:
         stock_btn_xpath = "//div[contains(@class, 'button_content') and contains(text(), 'Наличие в магазинах')]/.."
@@ -191,10 +215,12 @@ def parse_product(driver, url, city_name):
                 stock_str = cells[1].text.strip()
                 stock = int(re.sub(r'\D', '', stock_str)) if re.search(r'\d', stock_str) else 0
                 
+                store_type = get_store_type(address)
+                
                 results.append({
                     "Номер": 0,
-                    "Сеть": city_name,
-                    "Тип магазина": "Магазин/Дарксторы",
+                    "Сеть": retail_name,
+                    "Тип магазина": store_type,
                     "Адрес Торговой точки": address,
                     "Бренд": brand,
                     "Название продукта": name,
@@ -216,8 +242,8 @@ def parse_product(driver, url, city_name):
     if not has_stock_data:
         results.append({
             "Номер": 0,
-            "Сеть": city_name,
-            "Тип магазина": "Магазин/Дарксторы",
+            "Сеть": retail_name, # Берем Сеть из конфига
+            "Тип магазина": "Супермаркет",
             "Адрес Торговой точки": "",
             "Бренд": brand,
             "Название продукта": name,
