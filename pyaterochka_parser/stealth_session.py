@@ -30,7 +30,6 @@ def _init_uc_driver(headless: bool, locale: str, proxy: Optional[str]):
     """Создает браузер с привязкой профиля для сохранения кук и обхода защит"""
     options = uc.ChromeOptions()
     
-    #СОХРАНЕНИЕ ПРОФИЛЯ (КРИТИЧНО ДЛЯ ОБХОДА КАПЧИ)
     current_dir = os.path.dirname(os.path.abspath(__file__))
     parser_root = os.path.dirname(current_dir)
     profile_dir = os.path.join(current_dir, "pyaterochka_profile")
@@ -85,7 +84,7 @@ def driver_get_json(driver, url: str, params: Optional[dict] = None, timeout_s: 
 
 @contextmanager
 def pyaterochka_driver(headless: bool = False, locale: str = "ru-RU", proxy: Optional[str] = None,
-                       startup_timeout_s: float = 60.0):
+                       startup_timeout_s: float = 120):
     driver = _init_uc_driver(headless=headless, locale=locale, proxy=proxy)
     try:
         driver.get("https://5ka.ru/")
