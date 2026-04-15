@@ -10,10 +10,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 def clean_price(price_str):
-    """Очистка строки"""
     if not price_str:
         return None
-    # Очищаем от букв (включая "б", "руб"), пробелов и оставляем только цифры с точкой
     cleaned = re.sub(r'[^\d.,]', '', price_str).replace(',', '.')
     try:
         return float(cleaned)
@@ -21,10 +19,8 @@ def clean_price(price_str):
         return None
 
 def check_and_bypass_waf(driver):
-    """Проверка на капчу"""
     src = driver.page_source.lower()
     if "заблокирован" in src or "cloudflare" in src or "qrator" in src:
-        print("⚠️ [Антибот] Обнаружена блокировка WAF! Имитируем ожидание...")
         time.sleep(random.uniform(2.0, 3.5))
         driver.refresh()
         time.sleep(3)
@@ -33,14 +29,9 @@ def check_and_bypass_waf(driver):
     return True
 
 def set_city(driver, city_name):
-    """
-    Установка адреса на сайте
-    """
     driver.get("https://tvoydom.ru/")
-    
     if not check_and_bypass_waf(driver):
         return False
-
     try:
         badge = WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".location-badge__city"))
@@ -53,41 +44,34 @@ def set_city(driver, city_name):
         search_input = WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable((By.ID, "street"))
         )
-        
         search_input.click()
         time.sleep(0.5)
-        search_input.send_keys(Keys.DELETE)
+        
+        search_input.send_keys(Keys.CONTROL + "a")
+        time.sleep(0.2)
+        search_input.send_keys(Keys.BACKSPACE)
         time.sleep(0.5)
         
-        address_text = "Москва, Красная пл, д11"
-        for char in address_text:
-            search_input.send_keys(char)
-            time.sleep(0.05) 
-            
-        time.sleep(2)
+        search_input.send_keys("Москва, Красная пл, д 11")
+        time.sleep(1.5)
         search_input.send_keys(Keys.DOWN)
         time.sleep(0.5)
         search_input.send_keys(Keys.ENTER)
-        
         time.sleep(1)
         
         save_btn = WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "button.location-popup__button"))
         )
         save_btn.click()
-        
         time.sleep(2)
         return True
-    except Exception as e:
-        print(f"⚠️ Окно адреса не найдено или город уже установлен. Идем дальше.")
+    except Exception:
         return True 
 
 def get_product_links(driver, query):
     driver.get("https://tvoydom.ru/")
-    
     if not check_and_bypass_waf(driver):
         return []
-
     try:
         search_input = WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "input.js-search-suggest-field, input[type='search']"))
@@ -96,8 +80,6 @@ def get_product_links(driver, query):
         search_input.send_keys(query)
         time.sleep(0.5)
         search_input.send_keys(Keys.ENTER)
-        
-
         try:
             products_filter_xpath = "//li[contains(@class, 'search-categories')]//p[contains(text(), 'Продукты')]"
             products_filter = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, products_filter_xpath)))
@@ -105,13 +87,10 @@ def get_product_links(driver, query):
             time.sleep(2)
         except (TimeoutException, NoSuchElementException):
             time.sleep(1.5) 
-
-    except Exception as e:
-        print(f"⚠️ Ошибка при поиске '{query}': {e}")
+    except Exception:
         return []
 
     main_keyword = query.split()[0].lower() if query else ""
-    
     products_dict = {}
     last_height = driver.execute_script("return document.body.scrollHeight")
     
@@ -123,26 +102,19 @@ def get_product_links(driver, query):
             link_elem = card.select_one('.product__link')
             if not link_elem:
                 continue
-                
             title = link_elem.text.strip()
-            
             if main_keyword and main_keyword not in title.lower():
                 continue
-                
             href = link_elem.get('href')
             if not href:
                 continue
-                
             full_url = f"https://tvoydom.ru{href}" if href.startswith('/') else href
             
-
             if full_url in products_dict:
                 continue
-
-
+                
             promo_price = None
             current_price = None
-            
             curr_price_elem = card.select_one(".product__price-current")
             old_price_elem = card.select_one(".product__price-old")
             
@@ -152,15 +124,29 @@ def get_product_links(driver, query):
             elif curr_price_elem:
                 current_price = clean_price(curr_price_elem.text)
 
+            stock = 0
+            availability_elem = card.select_one(".product__availability-text")
+            if availability_elem:
+                avail_text = availability_elem.text.strip()
+                stock_digits = re.sub(r'\D', '', avail_text)
+                if stock_digits:
+                    stock = int(stock_digits)
+                elif "в наличии" in avail_text.lower():
+                    stock = 1
+            else:
+                no_stock_btn = card.select_one(".btn-mixed__link.is-disabled")
+                if not no_stock_btn:
+                    stock = 1
+
             products_dict[full_url] = {
                 "url": full_url,
                 "current_price": current_price,
-                "promo_price": promo_price
+                "promo_price": promo_price,
+                "stock": stock
             }
                 
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
         time.sleep(1) 
-        
         new_height = driver.execute_script("return document.body.scrollHeight")
         if new_height == last_height:
             time.sleep(1.5)
@@ -175,33 +161,27 @@ def parse_product(driver, product_data, retail_name, city_name):
     url = product_data["url"]
     cat_current_price = product_data["current_price"]
     cat_promo_price = product_data["promo_price"]
+    stock = product_data.get("stock", 0)
     
     driver.get(url)
-    
     if not check_and_bypass_waf(driver):
         return []
-
     try:
         WebDriverWait(driver, 6).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "h1, .product__name"))
         )
     except TimeoutException:
-        print(f"⚠️ Товар не загрузился: {url}")
         return []
 
     soup = BeautifulSoup(driver.page_source, 'html.parser')
-
-    # Название
     name_elem = soup.select_one("h1") or soup.select_one(".product__name")
     name = name_elem.text.strip() if name_elem else ""
 
-    # Артикул
     product_id = ""
     match_id = re.search(r'/catalog/(\d+)', url)
     if match_id:
         product_id = match_id.group(1)
 
-    # Фото товара
     photo_url = ""
     img_elem = soup.select_one(".carousel-product-preview__img")
     if img_elem:
@@ -209,7 +189,6 @@ def parse_product(driver, product_data, retail_name, city_name):
         if photo_url and photo_url.startswith('/'):
             photo_url = f"https://tvoydom.ru{photo_url}"
 
-    # Парсинг Цены из блока карточек
     promo_price = None
     current_price = None
     price_box = soup.select_one(".page-product__price-box")
@@ -217,7 +196,6 @@ def parse_product(driver, product_data, retail_name, city_name):
     if price_box:
         new_price_elem = price_box.select_one(".price--new")
         old_price_elem = price_box.select_one(".price--old")
-        
         if new_price_elem and old_price_elem:
             current_price = clean_price(old_price_elem.text)
             promo_price = clean_price(new_price_elem.text)
@@ -230,7 +208,6 @@ def parse_product(driver, product_data, retail_name, city_name):
         current_price = cat_current_price
         promo_price = cat_promo_price
 
-    # Бренд, Вес, Объем
     weight = None
     volume = None
     brand = "Твой Дом"
@@ -242,16 +219,13 @@ def parse_product(driver, product_data, retail_name, city_name):
         if match:
             brand = urllib.parse.unquote(match.group(1)).strip().rstrip('/')
 
-
     features = soup.select(".features-list__item")
     for f in features:
         f_name_elem = f.select_one(".features-list__name")
         f_val_elem = f.select_one(".features-list__desc")
-        
         if f_name_elem and f_val_elem:
             f_name = f_name_elem.text.strip().lower()
             f_val = f_val_elem.text.strip()
-            
             if "бренд" in f_name or "торговая марка" in f_name:
                 brand = f_val
             elif "вес" in f_name:
@@ -269,25 +243,11 @@ def parse_product(driver, product_data, retail_name, city_name):
                 else:
                     volume = f_val
 
-    stock = 0
-    availability_elem = soup.select_one(".product__availability-text")
-    if availability_elem:
-        avail_text = availability_elem.text.strip()
-        stock_digits = re.sub(r'\D', '', avail_text)
-        if stock_digits:
-            stock = int(stock_digits)
-        elif "в наличии" in avail_text.lower():
-            stock = 1
-            
-    no_stock_btn = soup.select_one(".btn-mixed__link.is-disabled")
-    if no_stock_btn and "нет в наличии" in no_stock_btn.text.lower():
-        stock = 0
-
     return [{
         "Номер": 0,
         "Сеть": retail_name,
         "Тип магазина": "Гипермаркет",
-        "Адрес Торговой точки": "",
+        "Адрес Торговой точки": "Москва",
         "Бренд": brand,
         "Название продукта": name,
         "Цена": current_price,
@@ -297,6 +257,6 @@ def parse_product(driver, product_data, retail_name, city_name):
         "Рейтинг": None,
         "Объем": volume,
         "Вес": weight,
-        "Остаток": stock,
+        "Остаток": 0,
         "GTIN": product_id
     }]
