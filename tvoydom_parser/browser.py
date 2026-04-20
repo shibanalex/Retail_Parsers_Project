@@ -2,9 +2,6 @@ import os
 import undetected_chromedriver as uc
 
 def get_browser():
-    """
-    Инициализация undetected_chromedriver с фиксацией 146 версии и маскировкой
-    """
     options = uc.ChromeOptions()
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--window-size=1920,1080")

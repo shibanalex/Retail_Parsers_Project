@@ -161,7 +161,6 @@ def parse_product(driver, product_data, retail_name, city_name):
     url = product_data["url"]
     cat_current_price = product_data["current_price"]
     cat_promo_price = product_data["promo_price"]
-    stock = product_data.get("stock", 0)
     
     driver.get(url)
     if not check_and_bypass_waf(driver):
@@ -172,6 +171,13 @@ def parse_product(driver, product_data, retail_name, city_name):
         )
     except TimeoutException:
         return []
+
+    try:
+        tab_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Наличие в магазинах')]")
+        driver.execute_script("arguments[0].click();", tab_btn)
+        time.sleep(1)
+    except Exception:
+        pass
 
     soup = BeautifulSoup(driver.page_source, 'html.parser')
     name_elem = soup.select_one("h1") or soup.select_one(".product__name")
@@ -243,20 +249,43 @@ def parse_product(driver, product_data, retail_name, city_name):
                 else:
                     volume = f_val
 
-    return [{
-        "Номер": 0,
-        "Сеть": retail_name,
-        "Тип магазина": "Гипермаркет",
-        "Адрес Торговой точки": "Москва",
-        "Бренд": brand,
-        "Название продукта": name,
-        "Цена": current_price,
-        "Цена по акции": promo_price,
-        "Фото товара": photo_url,
-        "Ссылка на страницу": url,
-        "Рейтинг": None,
-        "Объем": volume,
-        "Вес": weight,
-        "Остаток": 0,
-        "GTIN": product_id
-    }]
+    valid_addresses = []
+    store_items = soup.select("ul.ylist-list.map-product__list > li.ylist-list__item")
+    
+    if store_items:
+        for item in store_items:
+            avail_elem = item.select_one(".ylist__available")
+            if avail_elem and "нет в наличии" in avail_elem.text.lower():
+                continue
+                
+            addr_elem = item.select_one(".ylist__address-text")
+            if addr_elem:
+                addr_text = addr_elem.get_text(separator=" ", strip=True).replace('\xa0', ' ')
+                addr_text = re.sub(r'\s+', ' ', addr_text).strip()
+                
+                if city_name.lower() == "москва" and "мкад" not in addr_text.lower():
+                    continue
+                    
+                valid_addresses.append(addr_text)
+
+    results = []
+    for addr in valid_addresses:
+        results.append({
+            "Номер": 0,
+            "Сеть": retail_name,
+            "Тип магазина": "Гипермаркет",
+            "Адрес Торговой точки": addr,
+            "Бренд": brand,
+            "Название продукта": name,
+            "Цена": current_price,
+            "Цена по акции": promo_price,
+            "Фото товара": photo_url,
+            "Ссылка на страницу": url,
+            "Рейтинг": None,
+            "Объем": volume,
+            "Вес": weight,
+            "Остаток": None,
+            "GTIN": product_id
+        })
+
+    return results

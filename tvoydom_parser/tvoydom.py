@@ -20,19 +20,19 @@ def get_all_data():
             return []
 
         actual_city_name = "Москва"
-        print(f"[{RETAIL_NAME}] 🏙️ Проверка города: {actual_city_name}...")
+        print(f"[{RETAIL_NAME}] Проверка города: {actual_city_name}...")
         set_city(driver, actual_city_name)
 
         points_count = 1
 
         for query in search_req:
-            print(f"[{RETAIL_NAME}] 🔎 Парсинг запроса: '{query}'...")
+            print(f"[{RETAIL_NAME}] Парсинг запроса: '{query}'...")
             
             product_links = get_product_links(driver, query)
             print(f"[{RETAIL_NAME}] Найдено {len(product_links)} целевых товаров по запросу '{query}'.")
 
             for i, link in enumerate(product_links, 1):
-                print(f"  [{i}/{len(product_links)}] Парсим товар: {link}")
+                print(f"  [{i}/{len(product_links)}] Парсим товар: {link['url']}")
                 
                 product_data_list = parse_product(driver, link, RETAIL_NAME, actual_city_name)
                 all_data.extend(product_data_list)
@@ -41,7 +41,7 @@ def get_all_data():
             update_retail_points(RETAIL_NAME, actual_city_name, points_count)
 
     except Exception as e:
-        print(f"❌ [{RETAIL_NAME}] Критическая ошибка: {e}")
+        print(f"[{RETAIL_NAME}] Критическая ошибка: {e}")
     finally:
         driver.quit()
 
@@ -51,7 +51,7 @@ def get_all_data():
     return all_data
 
 def main():
-    print(f"🚀 Запуск парсера {RETAIL_NAME}...")
+    print(f"Запуск парсера {RETAIL_NAME}...")
     return get_all_data()
 
 if __name__ == "__main__":
