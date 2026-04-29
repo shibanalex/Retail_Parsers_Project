@@ -178,6 +178,14 @@ def parse_product(driver, product_url, retail_name, city_name):
                 elif 'объем' in label_text or 'объём' in label_text:
                     volume = val_text
 
+        gtin = ""
+        header_tag = soup.find('div', class_='product-card__header')
+        if header_tag:
+            for p in header_tag.find_all('p'):
+                if 'Артикул' in p.text:
+                    gtin = p.text.replace('Артикул:', '').strip()
+                    break
+
         try:
             list_view_btn = WebDriverWait(driver, 5).until(
                 EC.element_to_be_clickable((By.XPATH, "//p[contains(text(), 'Списком')]"))
@@ -220,7 +228,7 @@ def parse_product(driver, product_url, retail_name, city_name):
                     "Объем": volume,
                     "Вес": "",
                     "Остаток": quantity,
-                    "GTIN": ""
+                    "GTIN": gtin
                 })
                 
         if not results:
@@ -239,7 +247,7 @@ def parse_product(driver, product_url, retail_name, city_name):
                 "Объем": volume,
                 "Вес": "",
                 "Остаток": 0,
-                "GTIN": ""
+                "GTIN": gtin
             })
 
     except Exception as e:

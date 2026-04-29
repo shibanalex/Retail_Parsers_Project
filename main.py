@@ -42,7 +42,8 @@ uc.Chrome.__del__ = _patched_del
 #from vkusvill_parser import vkusvill
 #from azbuka_vkusa_parser import av
 #from tvoydom_parser import tvoydom
-from alkoteka_parser import alkoteka
+# from alkoteka_parser import alkoteka
+from simplewine_parser import simplewine
 
 from parsers_core.utils import write_excel
 from config import table_name, parsers #, TelegramBot
@@ -81,7 +82,8 @@ parsers_funcs = {
 #    "https://vkusvill.ru/": vkusvill,
 #   "https://av.ru/": av,
 #    "https://tvoydom.ru/": tvoydom,
-    "https://alkoteka.com/": alkoteka,
+   # "https://alkoteka.com/": alkoteka,
+   "https://simplewine.ru/": simplewine,
 }
 
 def write_log(message, filename):
