@@ -109,13 +109,9 @@ def get_product_links(driver, query):
                 break
                 
             try:
-                cards_elements = driver.find_elements(By.CSS_SELECTOR, "article.snippet")
-                if cards_elements:
-                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", cards_elements[-1])
-                else:
-                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            except Exception:
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            except Exception:
+                pass
                 
             time.sleep(2) 
             
@@ -146,7 +142,7 @@ def parse_product(driver, product_url, retail_name, city_name):
         
         h1_tag = soup.find('h1')
         product_name = h1_tag.text.strip() if h1_tag else ""
-
+        
         photo_url = ""
         try:
             img_elem = driver.find_element(By.XPATH, "/html/body/div[1]/div/div/main/div[1]/div[2]/div[2]/div/div[1]/div[1]/div/div/div[2]/div/div[1]/div[1]/div/div/picture/img | //img[@itemprop='image']")
@@ -188,15 +184,19 @@ def parse_product(driver, product_url, retail_name, city_name):
             price_base = price_promo
             price_promo = None
 
+        volume = ""
         try:
-            volume = driver.find_element(By.XPATH, "/html/body/div[1]/div/div/main/div[1]/div[2]/div[2]/div/div[1]/div[2]/div[1]/div[2]/div[1]/div[3]/a/span").text
+            volume_elem = driver.find_element(By.XPATH, "//div[contains(@class, 'product-info')]//div[contains(text(), 'Объем')]/following-sibling::div | /html/body/div[1]/div/div/main/div[1]/div[2]/div[2]/div/div[1]/div[2]/div[1]/div[2]/div[1]/div[3]/a/span | //a[contains(@href, 'volume')]//span")
+            volume = volume_elem.text.strip()
         except Exception:
-            volume = ""
+            pass
 
+        brand = ""
         try:
-            brand = driver.find_element(By.XPATH, "/html/body/div[1]/div/div/main/div[1]/div[2]/div[2]/div/div[1]/div[2]/div[1]/div[2]/div[1]/div[5]/a/span").text
+            brand_elem = driver.find_element(By.XPATH, "//div[contains(@class, 'product-info')]//div[contains(text(), 'Бренд')]/following-sibling::div | /html/body/div[1]/div/div/main/div[1]/div[2]/div[2]/div/div[1]/div[2]/div[1]/div[2]/div[1]/div[5]/a/span | //a[contains(@href, 'manufacturer')]//span")
+            brand = brand_elem.text.strip()
         except Exception:
-            brand = ""
+            pass
 
         gtin = ""
         try:
@@ -206,40 +206,30 @@ def parse_product(driver, product_url, retail_name, city_name):
         except Exception:
             pass
 
+        address_texts = []
         try:
             avail_btn = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/div/main/div[1]/div[2]/div[2]/div/div[1]/div[2]/div[2]/div[1]/div[4]/div/div[1]/span/button | //button[contains(text(), 'Наличие')]"))
+                EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/div/main/div[1]/div[2]/div[2]/div/div[1]/div[2]/div[2]/div[1]/div[4]/div/div[1]/span/button | //button[contains(., 'Наличие')]"))
             )
             driver.execute_script("arguments[0].click();", avail_btn)
             time.sleep(2)
             
             try:
-                list_view_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Списком')] | //div[contains(text(), 'Списком')]")
+                list_view_btn = driver.find_element(By.XPATH, "//button[contains(., 'Списком')] | //div[contains(text(), 'Списком')] | /html/body/div[1]/div/div/main/div[4]/div/div[1]/div/div[1]/div[2]/div[2]/div/button[2]")
                 driver.execute_script("arguments[0].click();", list_view_btn)
                 time.sleep(2)
             except Exception:
                 pass
                 
-        except Exception:
-            pass
-
-        address_texts =[]
-        try:
-            addr_elements = driver.find_elements(By.XPATH, "//span[contains(@class, 'ihsuk')] | //div[@role='button']//span[contains(text(), 'г.')]")
-            for elem in addr_elements:
+            addr_elements = driver.find_elements(By.XPATH, "//span[contains(@class, 'ihsuk')]")
+            
+            for elem in addr_elements[2:]:
                 txt = elem.text.strip()
-                if txt and txt not in address_texts:
-                    address_texts.append(txt)
+                if txt and ("г." in txt or "ул." in txt or re.match(r'^\d', txt)) and txt not in address_texts:
+                    if "°C" not in txt and "винотек" not in txt.lower() and "самовывоз" not in txt.lower():
+                        address_texts.append(txt)
         except Exception:
-            pass
-
-        if not address_texts:
-            soup_shops = BeautifulSoup(driver.page_source, 'html.parser')
-            addresses = soup_shops.find_all('span', class_='ihsuk')
-            for addr in addresses:
-                txt = addr.text.strip()
-                if txt and txt not in address_texts:
-                    address_texts.append(txt)
+            pass 
         
         for address_text in address_texts:
             results.append({
