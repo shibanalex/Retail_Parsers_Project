@@ -217,7 +217,7 @@ def parse_product(driver, product_url, retail_name, city_name):
                     "Номер": 0,
                     "Сеть": retail_name,
                     "Тип магазина": "Магазин",
-                    "Адрес Торговой точки": address,
+                    "Адрес Торговой точки": city_name + " " + address,
                     "Бренд": brand,
                     "Название продукта": product_name,
                     "Цена": price_base,
