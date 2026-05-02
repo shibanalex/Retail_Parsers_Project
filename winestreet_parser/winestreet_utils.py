@@ -1,13 +1,14 @@
 import time
 import re
+import urllib.parse
 from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException
 
 def check_and_bypass_waf(driver):
+    """Обход проверки возраста"""
     try:
         age_btn = WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/div[2]/div/div[2]/div[3]/button[1] | //button[contains(translate(text(), 'ДА', 'да'), 'да') or contains(text(), '18')]"))
@@ -20,6 +21,7 @@ def check_and_bypass_waf(driver):
     return True
 
 def set_city(driver, city_name):
+    """Установка города"""
     driver.get("https://winestreet.ru/")
     check_and_bypass_waf(driver)
     
@@ -44,52 +46,61 @@ def set_city(driver, city_name):
         return False
 
 def get_product_links(driver, query):
+    """Сбор ссылок из поиска с динамическим определением кол-ва страниц"""
     links = set()
     print(f"Начинаем поиск для '{query}'...")
     
     try:
-        search_input = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div/div[1]/div/div[3]/div[1]/div/div[2]/form/div/input"))
-        )
-        search_input.clear()
-        search_input.send_keys(query)
-        search_input.send_keys(Keys.ENTER)
-        time.sleep(3) 
-
-        retries = 0       
-        max_retries = 4   
+        encoded_query = urllib.parse.quote(query)
+        max_pages = 1
+        current_page = 1
         
-        while True:
+        while current_page <= max_pages:
+            search_url = f"https://winestreet.ru/catalog/search/?filter.text={encoded_query}&page={current_page}"
+            print(f"📄 Парсим выдачу, страница: {current_page} из {max_pages}")
+            
+            driver.get(search_url)
+            time.sleep(2)
+            
             soup = BeautifulSoup(driver.page_source, 'html.parser')
-            product_cards = soup.find_all('div', class_=lambda c: c and 'cardProduct--container' in c)
             
-            links_count_before = len(links)
-            
+            if current_page == 1:
+                pagination = soup.find_all('li', class_='page-item')
+                if pagination and len(pagination) >= 2:
+                    for item in reversed(pagination):
+                        txt = item.get_text().strip()
+                        if txt.isdigit():
+                            max_pages = int(txt)
+                            print(f"✅ Найдено страниц в пагинации: {max_pages}")
+                            break
+
+            product_cards = soup.find_all('div', class_='cardProduct')
+            if not product_cards:
+                break
+                
+            found_on_page = 0
             for card in product_cards:
-                buy_btn = card.find('button', class_=lambda c: c and 'cardProductCart' in c)
-                if not buy_btn:
+                price_block = card.find('div', class_=lambda c: c and 'cardProduct--price' in c)
+                if price_block and "нет в наличии" in price_block.get_text().lower():
                     continue
                 
                 a_tag = card.find('a', class_=lambda c: c and 'cardProduct--title' in c)
+                if not a_tag:
+                    a_tag = card.find('a', href=True)
+                
                 if a_tag and 'href' in a_tag.attrs:
                     href = a_tag['href']
                     if not href.startswith('http'):
                         href = f"https://winestreet.ru{href}"
-                    links.add(href)
+                    
+                    if href not in links:
+                        links.add(href)
+                        found_on_page += 1
             
-            if len(links) > links_count_before:
-                retries = 0
-            else:
-                retries += 1
+            print(f"   Добавлено ссылок со стр {current_page}: {found_on_page}")
+            current_page += 1
                 
-            if retries >= max_retries:
-                print("Достигнут конец списка товаров.")
-                break
-                
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(2)
-                
-        print(f"ИТОГО найдено уникальных ссылок в наличии для '{query}': {len(links)}")
+        print(f"ИТОГО уникальных ссылок 'В наличии': {len(links)}")
     except Exception as e:
         print(f"Ошибка при сборе ссылок: {e}")
         
@@ -110,17 +121,18 @@ def extract_volume(name_str):
     return ""
 
 def parse_product(driver, product_url, retail_name, city_name):
+    """Сбор данных внутри карточки"""
     results = []
     try:
         driver.get(product_url)
-        time.sleep(2)
+        time.sleep(1.5)
         
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         
         name_tag = soup.find('h1', attrs={"itemprop": "name"})
-        if not name_tag:
-            name_tag = soup.find('h1')
-        product_name = name_tag.text.strip() if name_tag else "Неизвестный товар"
+        if not name_tag: name_tag = soup.find('h1')
+        product_name = name_tag.get_text(separator=" ").strip() if name_tag else "Неизвестный товар"
+        product_name = product_name.replace('\xa0', ' ')
         
         art_tag = soup.find(attrs={"itemprop": "productID"})
         gtin = art_tag.text.strip() if art_tag else ""
@@ -132,7 +144,6 @@ def parse_product(driver, product_url, retail_name, city_name):
             
         price_base = 0.0
         price_promo = None
-        
         old_price_tag = soup.find('div', class_=lambda c: c and 'priceOld' in c)
         current_price_tag = soup.find(attrs={"itemprop": "price"})
         
@@ -154,62 +165,38 @@ def parse_product(driver, product_url, retail_name, city_name):
         volume = extract_volume(product_name)
 
         try:
-            store_btn_xpath = "//*[@id='container']/div[7]/div/main/div[4]/div[1]/div[1]/div[2]/div[1]/div/div/div[2]/div[1]/div/a | //a[contains(@href, '#stocks')]"
+            store_btn_xpath = "//a[contains(@href, '#stocks')] | //div[contains(@class, 'cardProduct--availability')]//a"
             store_btn = WebDriverWait(driver, 3).until(
                 EC.element_to_be_clickable((By.XPATH, store_btn_xpath))
             )
             driver.execute_script("arguments[0].click();", store_btn)
-            time.sleep(1.5)
+            time.sleep(1)
         except:
             pass
 
         soup_shops = BeautifulSoup(driver.page_source, 'html.parser')
-        shop_cards = soup_shops.find_all('div', class_=lambda c: c and 'goodsStock' in c and 'address' not in c)
+        shop_cards = soup_shops.find_all('div', class_='goodsStock')
         
-        addresses_found = False
         for shop in shop_cards:
             addr_div = shop.find('div', class_='goodsStock--address')
             if addr_div:
-                a_tag = addr_div.find('a')
-                address = a_tag.text.strip() if a_tag else addr_div.text.strip()
+                address = addr_div.get_text(separator=" ").strip().replace('\xa0', ' ')
+                results.append({
+                    "Номер": 0, "Сеть": retail_name, "Тип магазина": "Магазин",
+                    "Адрес Торговой точки": address, "Бренд": brand,
+                    "Название продукта": product_name, "Цена": price_base, "Цена по акции": price_promo,
+                    "Фото товара": photo_url, "Ссылка на страницу": product_url,
+                    "Рейтинг": None, "Объем": volume, "Вес": "", "Остаток": 1, "GTIN": gtin
+                })
                 
-                if address:
-                    addresses_found = True
-                    results.append({
-                        "Номер": 0,
-                        "Сеть": retail_name,
-                        "Тип магазина": "Магазин",
-                        "Адрес Торговой точки": address,
-                        "Бренд": brand,
-                        "Название продукта": product_name,
-                        "Цена": price_base,
-                        "Цена по акции": price_promo,
-                        "Фото товара": photo_url,
-                        "Ссылка на страницу": product_url,
-                        "Рейтинг": None,
-                        "Объем": volume,
-                        "Вес": "",
-                        "Остаток": 1,
-                        "GTIN": gtin
-                    })
-                
-        if not addresses_found:
+        if not results:
              results.append({
-                "Номер": 0,
-                "Сеть": retail_name,
-                "Тип магазина": "Магазин",
+                "Номер": 0, "Сеть": retail_name, "Тип магазина": "Магазин",
                 "Адрес Торговой точки": "Нет в наличии / Не указано",
-                "Бренд": brand,
-                "Название продукта": product_name,
-                "Цена": price_base,
-                "Цена по акции": price_promo,
-                "Фото товара": photo_url,
-                "Ссылка на страницу": product_url,
-                "Рейтинг": None,
-                "Объем": volume,
-                "Вес": "",
-                "Остаток": 0,
-                "GTIN": gtin
+                "Бренд": brand, "Название продукта": product_name,
+                "Цена": price_base, "Цена по акции": price_promo,
+                "Фото товара": photo_url, "Ссылка на страницу": product_url,
+                "Рейтинг": None, "Объем": volume, "Вес": "", "Остаток": 0, "GTIN": gtin
             })
 
     except Exception as e:
