@@ -20,15 +20,36 @@ def check_and_bypass_waf(driver):
         pass
     return True
 
+def dismiss_city_popup(driver):
+    """Закрывает плашку Да, верно"""
+    try:
+        confirm_btn = WebDriverWait(driver, 3).until(
+            EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'dbtn') and (contains(., 'Да, верно') or contains(., 'Верно'))]"))
+        )
+        driver.execute_script("arguments[0].click();", confirm_btn)
+        time.sleep(1)
+    except:
+        pass
+
 def set_city(driver, city_name):
-    """Установка города"""
+    driver.get("https://winestreet.ru/robots.txt")
+    driver.delete_all_cookies()
+    
     driver.get("https://winestreet.ru/")
     check_and_bypass_waf(driver)
     
+    dismiss_city_popup(driver)
+    
     try:
         city_header_btn = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/div[1]/div/div[1]/div/div/div[1]/div"))
+            EC.presence_of_element_located((By.XPATH, "/html/body/div[1]/div/div[1]/div/div[1]/div/div/div[1]/div"))
         )
+        current_city = city_header_btn.text.strip()
+        
+        if city_name.lower() in current_city.lower():
+            print(f"Город уже установлен корректно: {current_city}")
+            return True
+            
         driver.execute_script("arguments[0].click();", city_header_btn)
         time.sleep(1)
         
@@ -46,7 +67,7 @@ def set_city(driver, city_name):
         return False
 
 def get_product_links(driver, query):
-    """Сбор ссылок из поиска с динамическим определением кол-ва страниц"""
+    """Сбор ссылок с динамической пагинацией"""
     links = set()
     print(f"Начинаем поиск для '{query}'...")
     
@@ -57,10 +78,12 @@ def get_product_links(driver, query):
         
         while current_page <= max_pages:
             search_url = f"https://winestreet.ru/catalog/search/?filter.text={encoded_query}&page={current_page}"
-            print(f"📄 Парсим выдачу, страница: {current_page} из {max_pages}")
+            print(f" Парсим выдачу, страница: {current_page} из {max_pages}")
             
             driver.get(search_url)
             time.sleep(2)
+            
+            dismiss_city_popup(driver)
             
             soup = BeautifulSoup(driver.page_source, 'html.parser')
             
@@ -137,11 +160,13 @@ def parse_product(driver, product_url, retail_name, city_name):
         art_tag = soup.find(attrs={"itemprop": "productID"})
         gtin = art_tag.text.strip() if art_tag else ""
         
+
         img_tag = soup.find('img', attrs={"itemprop": "contentUrl"})
         photo_url = img_tag['src'] if img_tag and 'src' in img_tag.attrs else ""
         if photo_url and not photo_url.startswith('http'):
             photo_url = "https://static.winestreet.ru" + photo_url
             
+
         price_base = 0.0
         price_promo = None
         old_price_tag = soup.find('div', class_=lambda c: c and 'priceOld' in c)
@@ -153,6 +178,7 @@ def parse_product(driver, product_url, retail_name, city_name):
         elif current_price_tag:
             price_base = clean_price(current_price_tag.get('content') or current_price_tag.text)
             
+
         brand = ""
         attrs_blocks = soup.find_all('div', class_='productAttributes--item')
         for block in attrs_blocks:
@@ -164,7 +190,10 @@ def parse_product(driver, product_url, retail_name, city_name):
                 
         volume = extract_volume(product_name)
 
+
         try:
+            dismiss_city_popup(driver)
+            
             store_btn_xpath = "//a[contains(@href, '#stocks')] | //div[contains(@class, 'cardProduct--availability')]//a"
             store_btn = WebDriverWait(driver, 3).until(
                 EC.element_to_be_clickable((By.XPATH, store_btn_xpath))
