@@ -199,7 +199,7 @@ def parse_product(driver, product_url, retail_name, city_name):
                 EC.element_to_be_clickable((By.XPATH, store_btn_xpath))
             )
             driver.execute_script("arguments[0].click();", store_btn)
-            time.sleep(1)
+            time.sleep(3)
         except:
             pass
 
