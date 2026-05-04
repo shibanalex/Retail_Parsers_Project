@@ -14,7 +14,7 @@ def get_browser():
     # profile_dir = os.path.join(base_dir, "winestreet_profile")
     # options.add_argument(f"--user-data-dir={profile_dir}")
 
-    driver = uc.Chrome(options=options)
+    driver = uc.Chrome(options=options, version_main=176)
 
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": """
