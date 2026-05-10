@@ -30,7 +30,6 @@ from perekrestok_parser.shared_utils import (
     local_proxy_for
 )
 
-# Настройка логирования для подавления шума от библиотек
 logging.getLogger('urllib3').setLevel(logging.ERROR)
 logging.getLogger('selenium').setLevel(logging.ERROR)
 
@@ -57,7 +56,7 @@ def _get_chrome_version() -> int | None:
         chrome_binary,
         env_override_key="PEREKRESTOK_CHROME_VERSION_MAIN"
     )
-    _chrome_version_cache = version
+    _chrome_version_cache = version if version else 120
     return _chrome_version_cache
 
 
@@ -67,6 +66,11 @@ def _get_user_agent() -> str:
         f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         f"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version}.0.0.0 Safari/537.36"
     )
+
+
+def _get_sec_ch_ua() -> str:
+    version = _get_chrome_version()
+    return f'"Not(A:Brand";v="99", "Google Chrome";v="{version}", "Chromium";v="{version}"'
 
 
 class ProxyBlockedError(RuntimeError):
@@ -174,6 +178,54 @@ def _reset_http_session(clear_cookies: bool = False):
             pass
 
 
+def _apply_stealth_scripts(driver):
+    """Глубокая маскировка Selenium через CDP."""
+    stealth_script = """
+    // 1. Скрываем webdriver
+    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+    delete Object.getPrototypeOf(navigator).webdriver;
+    
+    // 2. Имитируем объект Chrome (ServicePipe это проверяет)
+    if (!window.chrome) {
+        window.chrome = {
+            app: { isInstalled: false, InstallState: { DISABLED: 'disabled', INSTALLED: 'installed', NOT_INSTALLED: 'not_installed' }, RunningState: { CANNOT_RUN: 'cannot_run', READY_TO_RUN: 'ready_to_run', RUNNING: 'running' } },
+            runtime: { OnInstalledReason: { CHROME_UPDATE: 'chrome_update', INSTALL: 'install', SHARED_MODULE_UPDATE: 'shared_module_update', UPDATE: 'update' }, OnRestartRequiredReason: { APP_UPDATE: 'app_update', OS_UPDATE: 'os_update', PERIODIC: 'periodic' }, PlatformArch: { ARM: 'arm', ARM64: 'arm64', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' }, PlatformNaclArch: { ARM: 'arm', MIPS: 'mips', MIPS64: 'mips64', X86_32: 'x86-32', X86_64: 'x86-64' }, PlatformOs: { ANDROID: 'android', CROS: 'cros', LINUX: 'linux', MAC: 'mac', OPENBSD: 'openbsd', WIN: 'win' }, RequestUpdateCheckStatus: { NO_UPDATE: 'no_update', THROTTLED: 'throttled', UPDATE_AVAILABLE: 'update_available' } }
+        };
+    }
+    
+    // 3. Подмена Permissions API (чтобы не палиться на проверке уведомлений)
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters) => (
+        parameters.name === 'notifications' ?
+            Promise.resolve({ state: Notification.permission }) :
+            originalQuery(parameters)
+    );
+    
+    // 4. Подмена плагинов
+    Object.defineProperty(navigator, 'plugins', {
+        get: () => {
+            const plugins = [
+                { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+                { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+                { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
+            ];
+            plugins.__proto__ = PluginArray.prototype;
+            return plugins;
+        }
+    });
+    
+    // 5. Разрешение экрана и цвета
+    Object.defineProperty(screen, 'colorDepth', { get: () => 24 });
+    Object.defineProperty(screen, 'pixelDepth', { get: () => 24 });
+    """
+    try:
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": stealth_script
+        })
+    except Exception as e:
+        print(f"Warning: CDP stealth injection failed: {e}")
+
+
 def _build_selenium_options(proxy_url: str | None) -> Options:
     options = Options()
     options.add_argument("--no-sandbox")
@@ -183,9 +235,9 @@ def _build_selenium_options(proxy_url: str | None) -> Options:
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--lang=ru-RU,ru")
     options.add_argument(f"--user-agent={_get_user_agent()}")
+    options.add_argument("--disable-infobars")
+    
 
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-software-rasterizer")
     options.add_argument("--ignore-certificate-errors")
     options.add_argument("--ignore-ssl-errors")
 
@@ -201,7 +253,7 @@ def _build_selenium_options(proxy_url: str | None) -> Options:
     return options
 
 
-def _get_token_and_cookies_selenium(proxy: str | None, wait_s: float = 5.0) -> tuple[str, dict]:
+def _get_token_and_cookies_selenium(proxy: str | None, wait_s: float = 7.0) -> tuple[str, dict]:
     cached = _load_cookies_from_file()
     if cached:
         return cached
@@ -211,70 +263,50 @@ def _get_token_and_cookies_selenium(proxy: str | None, wait_s: float = 5.0) -> t
     label = f"token_{_sanitize_label(proxy_url or 'direct')}"
 
     try:
-        # Пытаемся получить драйвер, обрабатывая ошибки uc
         driver = _get_or_create_driver(proxy, main_url="about:blank")
-
         try:
+            time.sleep(random.uniform(1, 2))
             driver.get(site_url)
-            time.sleep(wait_s)
-
-            # Скрываем webdriver
-            try:
-                driver.execute_script(
-                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-                )
-            except Exception:
-                pass
+            
+            time.sleep(wait_s + random.uniform(1.0, 3.0))
 
             deadline = time.time() + _get_page_wait_s()
             token = None
             cookies = []
+            
             while time.time() < deadline:
-                state = _wait_for_content_or_captcha(
-                    driver, max(2.0, deadline - time.time())
-                )
+                state = _wait_for_content_or_captcha(driver, max(2.0, deadline - time.time()))
+                
                 if state == "forbidden":
-                    raise ProxyBlockedError("Forbidden ban detected")
+                    raise ProxyBlockedError("Forbidden ban detected (IP blocked)")
+                    
                 if state == "captcha":
-                    if not _solve_captcha_if_present(driver, label):
-                        manual_deadline = time.time() + 120
-                        while time.time() < manual_deadline:
-                            if _page_loaded_without_captcha(driver):
-                                break
-                            time.sleep(1)
-                        else:
-                            # Если не решили капчу, но токен все-таки появился - выходим
-                            if _extract_access_token_from_driver(driver):
-                                break
-                            raise RuntimeError("Captcha manual solve timeout")
-
-                    if _wait_for_content_or_captcha(driver, max(2.0, deadline - time.time())) != "content":
-                        # Проверяем токен даже если контент не загрузился полностью
-                        token = _extract_access_token_from_driver(driver)
-                        if token:
+                    manual_deadline = time.time() + 120
+                    print(f"\n[!] Обнаружена капча. Пожалуйста, решите её вручную в открытом окне браузера. У вас есть 2 минуты...")
+                    
+                    while time.time() < manual_deadline:
+                        if _page_loaded_without_captcha(driver) or _extract_access_token_from_driver(driver):
+                            print("[+] Капча успешно пройдена/Сайт загружен!")
                             break
-                        continue
+                        time.sleep(2)
+                    else:
+                        raise RuntimeError("Таймаут ручного решения капчи.")
+                        
+                    time.sleep(3)
+                    continue
 
                 elif state == "content":
-                    if _wait_for_content_or_captcha(driver, max(2.0, deadline - time.time())) != "content":
-                        continue
+                    pass
                 elif state == "timeout":
                     break
 
-                token = _extract_access_token_from_driver(driver) or _wait_for_token(
-                    driver, _get_token_wait_s()
-                )
+                token = _extract_access_token_from_driver(driver) or _wait_for_token(driver, _get_token_wait_s())
                 if token:
                     break
+                    
             cookies = driver.get_cookies()
         finally:
-            try:
-                # В отличие от одноразового запуска, мы используем глобальный драйвер,
-                # поэтому здесь его закрывать не обязательно, если хотим переиспользовать.
-                # Но для надежности в текущей логике - закрываем, если это не глобальный.
-                pass
-            except Exception:
-                pass
+            pass
     finally:
         try:
             proxy_cm.__exit__(None, None, None)
@@ -297,29 +329,34 @@ def _get_token_and_cookies_selenium(proxy: str | None, wait_s: float = 5.0) -> t
 
 
 def _build_http_session(token: str, cookies: dict, proxy: str | None):
-    session = cffi_requests.Session() if cffi_requests else requests.Session()
-    session.headers.update(
-        {
-            "accept": "application/json, text/plain, */*",
-            "accept-language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-            "auth": f"Bearer {token}",
-            "cache-control": "no-cache",
-            "origin": site_url.rstrip("/"),
-            "pragma": "no-cache",
-            "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+    use_cffi = cffi_requests is not None
+    session = cffi_requests.Session() if use_cffi else requests.Session()
+    
+    headers = {
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+        "auth": f"Bearer {token}",
+        "cache-control": "no-cache",
+        "origin": site_url.rstrip("/"),
+        "pragma": "no-cache",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+    }
+    
+    if not use_cffi:
+        headers.update({
+            "sec-ch-ua": _get_sec_ch_ua(),
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": '"Windows"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "same-origin",
             "user-agent": _get_user_agent(),
-        }
-    )
+        })
+
+    session.headers.update(headers)
     if cookies:
         session.cookies.update(cookies)
     if proxy:
         proxy = _normalize_proxy(proxy)
-    if proxy:
         session.proxies = {"http": proxy, "https": proxy}
     return session
 
@@ -574,37 +611,30 @@ def _get_or_create_driver(proxy: str | None, main_url: str = site_url):
     chrome_binary = _find_chrome_binary()
 
     def prepare_proxy_args(opts, p_info):
-        """Правильно форматирует прокси для Chrome."""
         if not p_info:
             return
-
         scheme = p_info.get('scheme', 'http').lower()
         host = p_info.get('host')
         port = p_info.get('port')
-
         if scheme in ('http', 'https'):
             p_str = f"{host}:{port}"
-        # Для SOCKS схема обязательна
         elif 'socks' in scheme:
             p_str = f"{scheme}://{host}:{port}"
         else:
-            # Fallback
             p_str = f"{host}:{port}"
 
         opts.add_argument(f"--proxy-server={p_str}")
-
-
         if scheme not in {"socks5"} and p_info.get("username"):
             ext_dir = _ensure_proxy_auth_extension(p_info)
             opts.add_argument(f"--load-extension={str(ext_dir)}")
-
 
     if use_uc:
         options = uc.ChromeOptions()
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--start-maximized")
-        options.add_argument("--disable-gpu")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--disable-popup-blocking")
 
         if chrome_binary:
             options.binary_location = chrome_binary
@@ -630,6 +660,7 @@ def _get_or_create_driver(proxy: str | None, main_url: str = site_url):
 
             driver = uc.Chrome(**uc_kwargs)
             driver.set_page_load_timeout(30)
+            _apply_stealth_scripts(driver)
             _driver = driver
             _driver_proxy = proxy
             return driver
@@ -641,8 +672,7 @@ def _get_or_create_driver(proxy: str | None, main_url: str = site_url):
                 except:
                     pass
 
-    # 2. Fallback: Обычный Selenium
-    options = _build_selenium_options(None)  # Прокси добавим вручную ниже
+    options = _build_selenium_options(None) 
 
     proxy_cm = local_proxy_for(proxy)
     proxy_url, _proc = proxy_cm.__enter__()
@@ -657,6 +687,7 @@ def _get_or_create_driver(proxy: str | None, main_url: str = site_url):
 
     driver = webdriver.Chrome(options=options)
     driver.set_page_load_timeout(30)
+    _apply_stealth_scripts(driver)
 
     try:
         driver.get(main_url)
@@ -747,6 +778,9 @@ def _driver_fetch_text(
             hdrs.pop(key, None)
     if json_data is not None and not any(k.lower() == "content-type" for k in hdrs):
         hdrs["content-type"] = "application/json"
+    
+    time.sleep(random.uniform(0.5, 1.5))
+    
     script = r"""
 const url = arguments[0];
 const method = arguments[1];
@@ -838,7 +872,6 @@ def _captcha_cache_dir() -> Path:
 def _detect_captcha_kind(html: str) -> str:
     lowered = (html or "").lower()
 
-    # Checkbox check first
     if "challenge-platform" in lowered or "cf-turnstile" in lowered or "verify you are human" in lowered:
         return "checkbox"
 
@@ -995,37 +1028,35 @@ def _has_rotate_captcha(driver: webdriver.Chrome) -> bool:
 
 
 def _solve_checkbox_captcha(driver: webdriver.Chrome) -> bool:
-    """
-    Нажатие на чекбокс капчи.
-    """
     try:
         wait = WebDriverWait(driver, 10)
-
         try:
             label = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "label[for='is-robot']")))
-
             action = ActionChains(driver)
             action.move_to_element(label)
-            action.pause(random.uniform(0.3, 0.8))
+            action.pause(random.uniform(0.5, 1.2))
             action.click()
             action.perform()
             return True
         except Exception:
             driver.execute_script("document.getElementById('is-robot').click();")
-
             time.sleep(2)
             is_checked = driver.execute_script("return document.getElementById('is-robot').checked;")
             return is_checked
-
     except Exception as e:
-        print(f"Ошибка при обработке чекбокса: {e}")
-
+        pass
     return False
+
 
 def _solve_rotate_captcha(driver: webdriver.Chrome, label: str, max_attempts: int) -> bool:
     api_key = _get_captcha_api_key()
     if not api_key:
-        print("[captcha] API-ключ не задан. Автоматическое решение rotate-капчи невозможно.")
+        print("[!] ВНИМАНИЕ: Автоматическое решение капчи недоступно. Решите капчу в открытом окне браузера.")
+        deadline = time.time() + 120
+        while time.time() < deadline:
+            if _wait_captcha_clear(driver, max_wait_s=2.0) or _page_loaded_without_captcha(driver):
+                return True
+            time.sleep(1.5)
         return False
 
     for attempt in range(1, max_attempts + 1):
@@ -1197,7 +1228,7 @@ def _move_captcha_control(driver: webdriver.Chrome, angle: int, max_angle: int =
         return
     try:
         offset_x = _compute_slider_delta(driver, el, angle, max_angle=max_angle)
-        ActionChains(driver).click_and_hold(el).move_by_offset(offset_x, 0).release().perform()
+        ActionChains(driver).click_and_hold(el).pause(0.5).move_by_offset(offset_x, 0).pause(0.3).release().perform()
     except Exception:
         pass
 
@@ -1217,9 +1248,6 @@ def _wait_captcha_clear(driver: webdriver.Chrome, max_wait_s: float | None = Non
 
 
 def _solve_captcha_if_present(driver: webdriver.Chrome, label: str, max_attempts: int | None = None) -> bool:
-    """
-    Проверка наличия и решение капчи.
-    """
     attempts = _get_captcha_max_tries() if max_attempts is None else max(0, max_attempts)
     if attempts <= 0:
         return True
@@ -1228,29 +1256,24 @@ def _solve_captcha_if_present(driver: webdriver.Chrome, label: str, max_attempts
         html = driver.page_source or ""
         kind = _detect_captcha_kind(html)
 
-        # 1. Если обнаружен чекбокс (Cloudflare или простая форма)
         if kind == "checkbox" or driver.find_elements(By.ID, "is-robot"):
             if _solve_checkbox_captcha(driver):
                 time.sleep(5)
                 if _page_loaded_without_captcha(driver):
                     return True
 
-        # 2. Если обнаружена Rotate-капча (повороты)
         if kind == "captcha-rotate":
             return _solve_rotate_captcha(driver, label, attempts)
 
-        # 3. Общая логика для блокировок и неопознанных капч
         if kind in {"captcha", "forbidden"}:
             if _extract_access_token_from_driver(driver):
                 return True
             if _has_rotate_captcha(driver):
                 return _solve_rotate_captcha(driver, label, attempts)
-
-            # Попытка нажать на чекбокс как на последний шанс
-            if _solve_checkbox_captcha(driver):
-                time.sleep(5)
-                if _extract_access_token_from_driver(driver):
-                    return True
+            
+            print("[!] Ожидание решения капчи (пожалуйста, решите в браузере)")
+            if _solve_rotate_captcha(driver, label, attempts): 
+                return True
 
             if _wait_for_token(driver):
                 return True
@@ -1400,7 +1423,7 @@ def _get_cache_dir() -> Path:
     return cache_dir
 
 
-_COOKIES_MAX_AGE_S = 1800  # 30 minutes
+_COOKIES_MAX_AGE_S = 1800 
 
 
 def _cookies_file_path() -> Path:
@@ -1471,12 +1494,6 @@ def _extract_access_token_from_text(text: str) -> str | None:
 
 
 def get_jwt_token(url: str, max_retries: int = 3, proxy: str | None = None) -> None:
-    """
-    Get JWT token
-    :param url: main site url
-    :param max_retries: max number of retries
-    :return: JWT token in global var
-    """
     if proxy is None:
         proxy_iter = _iter_proxy_retries(max_retries)
     else:
@@ -1533,16 +1550,6 @@ def get_category_data(
         url: str = category_items_url,
         max_retries: int = 10,
 ) -> dict | None:
-    """
-    Get category data
-    :param category_id: id of category
-    :param shop_id: id of shop
-    :param main_url: main site url
-    :param city_change_url: url for city change
-    :param url: product url
-    :param max_retries: max number of retries
-    :return: Items data by category
-    """
     headers = {
         "accept": "application/json, text/plain, */*",
         "accept-language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -1552,6 +1559,7 @@ def get_category_data(
         "origin": main_url,
         "pragma": "no-cache",
         "priority": "u=1, i",
+        "sec-ch-ua": _get_sec_ch_ua(),
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
         "sec-fetch-dest": "empty",
@@ -1609,14 +1617,6 @@ def get_item_data(
         main_url: str = site_url,
         max_retries: int = 10,
 ) -> dict | None:
-    """
-    Get item data
-    :param item_id: item id
-    :param url: item url
-    :param main_url: main url of site
-    :param max_retries: max number of retries
-    :return:
-    """
     headers = {
         "accept": "application/json, text/plain, */*",
         "accept-language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -1626,7 +1626,7 @@ def get_item_data(
         "origin": main_url,
         "pragma": "no-cache",
         "priority": "u=1, i",
-        "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+        "sec-ch-ua": _get_sec_ch_ua(),
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
         "sec-fetch-dest": "empty",
@@ -1636,7 +1636,7 @@ def get_item_data(
     }
     for proxy in _iter_proxy_retries(max_retries):
         try:
-            time.sleep(random.uniform(0.5, 0.8))
+            time.sleep(random.uniform(1.0, 2.5)) 
             driver = _ensure_token_for_proxy(main_url, proxy, max_retries=1)
             if not driver:
                 time.sleep(5)
@@ -1672,7 +1672,7 @@ def get_search_data(
         "origin": main_url,
         "pragma": "no-cache",
         "priority": "u=1, i",
-        "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+        "sec-ch-ua": _get_sec_ch_ua(),
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
         "sec-fetch-dest": "empty",
@@ -1725,7 +1725,7 @@ def get_location(city_pattern, main_url: str = site_url, max_retries: int = 10, 
         "origin": main_url,
         "pragma": "no-cache",
         "priority": "u=1, i",
-        "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+        "sec-ch-ua": _get_sec_ch_ua(),
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
         "sec-fetch-dest": "empty",
@@ -1779,7 +1779,7 @@ def get_city(city_pattern, main_url: str = site_url, max_retries: int = 10):
         "origin": main_url,
         "pragma": "no-cache",
         "priority": "u=1, i",
-        "sec-ch-ua": '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
+        "sec-ch-ua": _get_sec_ch_ua(),
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
         "sec-fetch-dest": "empty",
@@ -1834,6 +1834,7 @@ def get_search_request(search_req, page, shop_id, main_url: str = site_url, city
         "origin": main_url,
         "pragma": "no-cache",
         "priority": "u=1, i",
+        "sec-ch-ua": _get_sec_ch_ua(),
         "sec-ch-ua-mobile": "?0",
         "sec-ch-ua-platform": '"Windows"',
         "sec-fetch-dest": "empty",
