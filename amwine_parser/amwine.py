@@ -19,7 +19,6 @@ def get_all_data():
 
     try:
         actual_city_name = cities[0] if cities else "Москва"
-        print(f"Initializing parsing for city: {actual_city_name}")
         
         visited_addresses = set()
         shop_counter = 1
@@ -28,14 +27,11 @@ def get_all_data():
             address = select_shop(driver, actual_city_name, visited_addresses)
             
             if not address:
-                print("All available shops processed.")
                 break
                 
             visited_addresses.add(address)
-            print(f"\nProcessing shop #{shop_counter}: {address}")
 
             for query in search_req:
-                print(f"Executing search query: {query}")
                 product_links = get_product_links(driver, query)
                 
                 for link in product_links:
@@ -48,7 +44,7 @@ def get_all_data():
             update_retail_points(RETAIL_NAME, actual_city_name, shop_counter - 1)
 
     except Exception as e:
-        print(f"Critical execution error: {e}")
+        print(f"Critical execution error in Amwine parser: {e}")
     finally:
         driver.quit()
 

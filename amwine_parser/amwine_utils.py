@@ -8,7 +8,23 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 
+def force_awake(driver):
+    """
+    Spoofs page visibility to prevent JS throttling when browser is minimized.
+    Forces the site to treat the tab as active.
+    """
+    try:
+        driver.execute_script("""
+            Object.defineProperty(document, 'visibilityState', {get: () => 'visible'});
+            Object.defineProperty(document, 'hidden', {get: () => false});
+            document.dispatchEvent(new Event('visibilitychange'));
+        """)
+    except:
+        pass
+
 def check_and_bypass_waf(driver):
+    """Closes the 18+ age verification modal and cookie consent banners."""
+    force_awake(driver)
     try:
         age_btn = WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable((By.XPATH, '//button[contains(@class, "modal__button") and contains(., "Подтверждаю")]'))
@@ -26,6 +42,10 @@ def check_and_bypass_waf(driver):
     return True
 
 def select_shop(driver, city_name, visited_addresses):
+    """
+    Selects a shop that has not been visited yet using virtual scroll manipulation.
+    Returns the selected shop's address, or None if all shops are processed.
+    """
     driver.get("https://amwine.ru/")
     check_and_bypass_waf(driver)
     
@@ -69,6 +89,7 @@ def select_shop(driver, city_name, visited_addresses):
         scroll_stuck_counter = 0
 
         while True:
+            force_awake(driver)
             shops = driver.find_elements(By.XPATH, '//article[contains(@class, "shop-list-card")]')
             if not shops: 
                 return None
@@ -78,7 +99,7 @@ def select_shop(driver, city_name, visited_addresses):
                     addr = shop.find_element(By.CLASS_NAME, "shop-list-card__title").text.strip()
                     if addr not in visited_addresses:
                         select_btn = shop.find_element(By.XPATH, './/button[contains(@class, "shop-list-card__button-select")]')
-                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", select_btn)
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'instant'});", select_btn)
                         time.sleep(0.5)
                         driver.execute_script("arguments[0].click();", select_btn)
                         time.sleep(3)
@@ -90,7 +111,18 @@ def select_shop(driver, city_name, visited_addresses):
                 last_shop = shops[-1]
                 current_last_addr = last_shop.find_element(By.CLASS_NAME, "shop-list-card__title").text.strip()
                 
-                driver.execute_script("arguments[0].scrollIntoView({block: 'end'});", last_shop)
+                driver.execute_script("""
+                    arguments[0].scrollIntoView({block: 'end', behavior: 'instant'});
+                    let parent = arguments[0].parentNode;
+                    while(parent && parent !== document.body) {
+                        if(parent.scrollHeight > parent.clientHeight) {
+                            parent.dispatchEvent(new Event('scroll', {bubbles: true}));
+                            parent.scrollTop = parent.scrollHeight;
+                            break;
+                        }
+                        parent = parent.parentNode;
+                    }
+                """, last_shop)
                 time.sleep(2) 
 
                 if current_last_addr == last_scrolled_address:
@@ -109,7 +141,7 @@ def select_shop(driver, city_name, visited_addresses):
         return None
 
 def update_url_page(url, page_num):
-
+    """Appends or updates the 'page' query parameter in the provided URL."""
     parsed = urllib.parse.urlparse(url)
     query_dict = urllib.parse.parse_qs(parsed.query)
     query_dict['page'] = [str(page_num)]
@@ -117,7 +149,7 @@ def update_url_page(url, page_num):
     return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
 
 def scroll_page_smoothly(driver):
-
+    """Scrolls down to trigger lazy loading of product cards."""
     total_height = driver.execute_script("return document.body.scrollHeight")
     for i in range(1, total_height, 600):
         driver.execute_script(f"window.scrollTo(0, {i});")
@@ -125,7 +157,10 @@ def scroll_page_smoothly(driver):
     time.sleep(1)
 
 def get_product_links(driver, query):
-
+    """
+    Executes a search query and extracts all product links 
+    that are currently in stock across all paginated results.
+    """
     all_links = set()
 
     try:
@@ -191,10 +226,12 @@ def get_product_links(driver, query):
 
     except Exception as e:
         print(f"Error during search for query '{query}': {e}")
-        return []
+        return list(all_links)
 
 def parse_product(driver, url, retail_name, city, address):
-
+    """
+    Navigates to the product page and extracts all relevant metrics.
+    """
     try:
         driver.get(url)
         time.sleep(2)
