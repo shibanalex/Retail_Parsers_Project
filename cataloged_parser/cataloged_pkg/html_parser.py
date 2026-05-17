@@ -45,7 +45,6 @@ def get_max_page(html):
     return max_p
 
 def _clean_price(text):
-    """Превращает '573,90 руб' в чистое число 573.9 для Excel"""
     if not text: return None
     clean = re.sub(r"\s+", "", text)
     clean = re.sub(r"[^\d,.]", "", clean).replace(",", ".")
@@ -72,7 +71,6 @@ def parse_products_page(html):
             link = link_tag['href'] if link_tag else None
             if link and not link.startswith("http"): link = BASE_URL + link
             
-            # --- Парсинг цен ---
             price = None
             old_price = None
             
@@ -83,7 +81,6 @@ def parse_products_page(html):
             prev_div = card.find("p", class_="rec__item--price--prev")
             if prev_div:
                 old_price = _clean_price(prev_div.get_text())
-            # --------------------
             
             img_tag = card.find("img", class_="rec__item--img")
             img = img_tag.get("src") if img_tag else None

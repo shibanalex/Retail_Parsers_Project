@@ -3,34 +3,51 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from config import cities, search_req, parsers
+from config import cities, search_req
 from parsers_core.utils import update_retail_points
 from .browser import get_browser
 from .alkoteka_utils import set_city, get_product_links, parse_product
 
-RETAIL_NAME = parsers.get("https://alkoteka.com/", "Алкотека")
-
-def get_all_data():
+def get_all_data(shop_name):
     driver = get_browser()
     all_data = []
 
     try:
-        actual_city_name = cities[0] if cities else "Москва"
-        set_city(driver, actual_city_name)
-        points_count = 1
+        for actual_city_name in cities:
+            print(f"[{shop_name}] 🏙️ Поиск города: {actual_city_name}...")
+            
+            status_code = set_city(driver, actual_city_name, shop_name)
+            
+            if status_code == 999:
+                print(f"[{shop_name}] ❌ Ошибка 999: Город '{actual_city_name}' не найден на сайте.")
+                continue
+            elif status_code in (403, 404, 500):
+                print(f"[{shop_name}] ❌ Ошибка {status_code}: Проблема с доступом к сайту (возможна блокировка или капча). Пропуск.")
+                break 
 
-        for query in search_req:
-            product_links = get_product_links(driver, query)
+            points_count = 1
 
-            for link_data in product_links:
-                product_data_list = parse_product(driver, link_data, RETAIL_NAME, actual_city_name)
-                all_data.extend(product_data_list)
+            for query in search_req:
+                print(f"[{shop_name}] 🛒 Сбор данных по запросу: {query}...")
+                product_links = get_product_links(driver, query, shop_name)
 
-        if all_data:
-            update_retail_points(RETAIL_NAME, actual_city_name, points_count)
+                if not product_links:
+                    print(f"[{shop_name}] ⚠️ По запросу '{query}' ничего не найдено.")
+                    continue
 
-    except Exception:
-        pass
+                for link_data in product_links:
+                    product_data_list = parse_product(driver, link_data, shop_name, actual_city_name, shop_name)
+                    all_data.extend(product_data_list)
+
+            
+            if all_data:
+                try:
+                    update_retail_points(shop_name, actual_city_name, points_count)
+                except Exception:
+                    pass
+
+    except Exception as e:
+        print(f"[{shop_name}] ❌ Критическая ошибка работы парсера: {e}")
     finally:
         driver.quit()
 
@@ -39,8 +56,11 @@ def get_all_data():
 
     return all_data
 
-def main():
-    return get_all_data()
+def main(shop_name="Алкотека"):
+    """
+    Точка входа. shop_name передается из main.py
+    """
+    return get_all_data(shop_name)
 
 if __name__ == "__main__":
     main()

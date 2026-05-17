@@ -7,12 +7,9 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.common.exceptions import TimeoutException
 
 def force_awake(driver):
-    """
-    Spoofs page visibility to prevent JS throttling when browser is minimized.
-    Forces the site to treat the tab as active.
-    """
     try:
         driver.execute_script("""
             Object.defineProperty(document, 'visibilityState', {get: () => 'visible'});
@@ -23,7 +20,6 @@ def force_awake(driver):
         pass
 
 def check_and_bypass_waf(driver):
-    """Closes the 18+ age verification modal and cookie consent banners."""
     force_awake(driver)
     try:
         age_btn = WebDriverWait(driver, 5).until(
@@ -41,12 +37,13 @@ def check_and_bypass_waf(driver):
         pass
     return True
 
-def select_shop(driver, city_name, visited_addresses):
-    """
-    Selects a shop that has not been visited yet using virtual scroll manipulation.
-    Returns the selected shop's address, or None if all shops are processed.
-    """
-    driver.get("https://amwine.ru/")
+def select_shop(driver, city_name, visited_addresses, shop_name):
+    try:
+        driver.get("https://amwine.ru/")
+    except Exception as e:
+        print(f"[{shop_name}] Ошибка 404. Не удалось загрузить страницу. {e}")
+        return 404, None
+
     check_and_bypass_waf(driver)
     
     try:
@@ -62,23 +59,31 @@ def select_shop(driver, city_name, visited_addresses):
         driver.execute_script("arguments[0].click();", change_btn)
         time.sleep(2)
 
-        ok_btn = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.XPATH, '//div[contains(@class, "modal__footer")]//button[contains(., "Хорошо")]'))
-        )
-        driver.execute_script("arguments[0].click();", ok_btn)
-        time.sleep(3)
+        try:
+            ok_btn = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, '//div[contains(@class, "modal__footer")]//button[contains(., "Хорошо")]'))
+            )
+            driver.execute_script("arguments[0].click();", ok_btn)
+            time.sleep(3)
+        except:
+            pass
 
         city_dd = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.CLASS_NAME, "select__button-text"))
         )
+        
         if city_name.lower() not in city_dd.text.lower():
             driver.execute_script("arguments[0].click();", city_dd)
             time.sleep(1.5)
-            target_city = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, f'//button[contains(@class, "select__option-button") and contains(., "{city_name}")]'))
-            )
-            driver.execute_script("arguments[0].click();", target_city)
-            time.sleep(5) 
+            
+            try:
+                target_city = WebDriverWait(driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, f'//button[contains(@class, "select__option-button") and contains(., "{city_name}")]'))
+                )
+                driver.execute_script("arguments[0].click();", target_city)
+                time.sleep(5) 
+            except TimeoutException:
+                return 999, None
 
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.XPATH, '//article[contains(@class, "shop-list-card")]'))
@@ -92,7 +97,7 @@ def select_shop(driver, city_name, visited_addresses):
             force_awake(driver)
             shops = driver.find_elements(By.XPATH, '//article[contains(@class, "shop-list-card")]')
             if not shops: 
-                return None
+                return 200, None
 
             for shop in shops:
                 try:
@@ -103,7 +108,7 @@ def select_shop(driver, city_name, visited_addresses):
                         time.sleep(0.5)
                         driver.execute_script("arguments[0].click();", select_btn)
                         time.sleep(3)
-                        return addr
+                        return 200, addr
                 except:
                     break
             
@@ -128,7 +133,7 @@ def select_shop(driver, city_name, visited_addresses):
                 if current_last_addr == last_scrolled_address:
                     scroll_stuck_counter += 1
                     if scroll_stuck_counter >= 3:
-                        return None
+                        return 200, None
                 else:
                     last_scrolled_address = current_last_addr
                     scroll_stuck_counter = 0
@@ -136,12 +141,14 @@ def select_shop(driver, city_name, visited_addresses):
             except:
                 time.sleep(1) 
 
+    except TimeoutException:
+        print(f"[{shop_name}] Ошибка 403. Элементы интерфейса не найдены.")
+        return 403, None
     except Exception as e:
-        print(f"Error selecting shop: {e}")
-        return None
+        print(f"[{shop_name}] Ошибка при выборе магазина: {e}")
+        return 500, None
 
 def update_url_page(url, page_num):
-    """Appends or updates the 'page' query parameter in the provided URL."""
     parsed = urllib.parse.urlparse(url)
     query_dict = urllib.parse.parse_qs(parsed.query)
     query_dict['page'] = [str(page_num)]
@@ -149,18 +156,13 @@ def update_url_page(url, page_num):
     return urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
 
 def scroll_page_smoothly(driver):
-    """Scrolls down to trigger lazy loading of product cards."""
     total_height = driver.execute_script("return document.body.scrollHeight")
     for i in range(1, total_height, 600):
         driver.execute_script(f"window.scrollTo(0, {i});")
         time.sleep(0.2)
     time.sleep(1)
 
-def get_product_links(driver, query):
-    """
-    Executes a search query and extracts all product links 
-    that are currently in stock across all paginated results.
-    """
+def get_product_links(driver, query, shop_name):
     all_links = set()
 
     try:
@@ -222,16 +224,14 @@ def get_product_links(driver, query):
                     full_url = urllib.parse.urljoin("https://amwine.ru", a_tag['href'])
                     all_links.add(full_url)
 
+        print(f"[{shop_name}] Найдено уникальных ссылок: {len(all_links)}")
         return list(all_links)
 
     except Exception as e:
-        print(f"Error during search for query '{query}': {e}")
+        print(f"[{shop_name}] Ошибка поиска по запросу '{query}': {e}")
         return list(all_links)
 
-def parse_product(driver, url, retail_name, city, address):
-    """
-    Navigates to the product page and extracts all relevant metrics.
-    """
+def parse_product(driver, url, retail_name, city, address, shop_name):
     try:
         driver.get(url)
         time.sleep(2)
@@ -298,5 +298,5 @@ def parse_product(driver, url, retail_name, city, address):
             "GTIN": gtin
         }]
     except Exception as e:
-        print(f"Error parsing product {url}: {e}")
+        print(f"[{shop_name}] Ошибка парсинга карточки {url}: {e}")
         return []

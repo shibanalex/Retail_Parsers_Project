@@ -45,7 +45,7 @@ uc.Chrome.__del__ = _patched_del
 # from alkoteka_parser import alkoteka
 # from simplewine_parser import simplewine
 # from winestreet_parser import winestreet
-from amwine_parser import amwine
+# from amwine_parser import amwine
 
 from parsers_core.utils import write_excel
 from config import table_name, parsers #, TelegramBot
@@ -87,7 +87,7 @@ parsers_funcs = {
     # "https://alkoteka.com/": alkoteka,
 #    "https://simplewine.ru/": simplewine,
     # "https://winestreet.ru/": winestreet,
-    "https://amwine.ru/": amwine,
+    # "https://amwine.ru/": amwine,
 }
 
 def write_log(message, filename):

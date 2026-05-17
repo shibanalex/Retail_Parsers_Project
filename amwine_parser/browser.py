@@ -3,10 +3,6 @@ import configparser
 import undetected_chromedriver as uc
 
 def get_browser():
-    """
-    Initializes and returns an undetected Chrome WebDriver instance.
-    Reads window size preferences from ../plugin/plugins.cfg if available.
-    """
     options = uc.ChromeOptions()
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--disable-infobars")
@@ -33,7 +29,7 @@ def get_browser():
                 if size_h and size_v:
                     window_size = f"{size_h},{size_v}"
         except Exception as e:
-            print(f"Failed to read plugins.cfg: {e}")
+            print(f"[Browser] Ошибка чтения plugins.cfg: {e}")
 
     options.add_argument(f"--window-size={window_size}")
 

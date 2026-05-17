@@ -17,9 +17,9 @@ def clean_price(price_str):
     except ValueError:
         return None
 
-def check_and_bypass_waf(driver):
+def check_and_bypass_waf(driver, shop_name):
     if "Ваш запрос был заблокирован" in driver.page_source or "welcome@azbukavkusa.ru" in driver.page_source:
-        print("⚠️ [Антибот] Обнаружена блокировка WAF! Имитируем ожидание...")
+        print(f"[{shop_name}] Обнаружена блокировка WAF. Имитация активности.")
         for _ in range(3):
             driver.execute_script(f"window.scrollBy(0, {random.randint(100, 300)});")
             time.sleep(random.uniform(1.5, 3.5))
@@ -28,16 +28,20 @@ def check_and_bypass_waf(driver):
         time.sleep(5)
         
         if "Ваш запрос был заблокирован" in driver.page_source:
-            print("❌ [Антибот] Обойти блокировку не удалось. IP в черном списке.")
+            print(f"[{shop_name}] Ошибка 403. Обход блокировки не удался.")
             return False
     return True
 
-def set_city(driver, city_name):
-    driver.get("https://av.ru/")
-    time.sleep(3)
-    
-    if not check_and_bypass_waf(driver):
-        return False
+def set_city(driver, city_name, shop_name):
+    try:
+        driver.get("https://av.ru/")
+        time.sleep(3)
+    except Exception as e:
+        print(f"[{shop_name}] Ошибка 404. Не удалось загрузить главную страницу. {e}")
+        return 404
+
+    if not check_and_bypass_waf(driver, shop_name):
+        return 403
 
     try:
         current_city_elem = WebDriverWait(driver, 10).until(
@@ -46,31 +50,38 @@ def set_city(driver, city_name):
         current_city = current_city_elem.text.strip()
         
         if current_city.lower() == city_name.lower():
-            return True
+            return 200
 
         city_block = driver.find_element(By.CSS_SELECTOR, ".header-main-city")
         ActionChains(driver).move_to_element(city_block).perform()
         time.sleep(1.5) 
         
         xpath_city = f"//div[contains(@class, 'header-main-city-tooltip__item') and contains(text(), '{city_name}')]"
-        city_option = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, xpath_city)))
-        driver.execute_script("arguments[0].click();", city_option)
-        time.sleep(3) 
-        return True
-    except Exception as e:
-        print(f"⚠️ Ошибка при установке города {city_name}: {e}")
-        return False
+        
+        try:
+            city_option = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, xpath_city)))
+            driver.execute_script("arguments[0].click();", city_option)
+            time.sleep(3) 
+            return 200
+        except TimeoutException:
+            return 999
 
-def get_product_links(driver, query):
+    except TimeoutException:
+        print(f"[{shop_name}] Ошибка загрузки элементов выбора города.")
+        return 500
+    except Exception as e:
+        print(f"[{shop_name}] Ошибка 500 при установке города {city_name}: {e}")
+        return 500
+
+def get_product_links(driver, query, shop_name):
     url = f"https://av.ru/search?freeText={query}"
     driver.get(url)
     time.sleep(3)
     
-    if not check_and_bypass_waf(driver):
+    if not check_and_bypass_waf(driver, shop_name):
         return []
 
     main_keyword = query.split()[0].lower() if query else ""
-
     links = set()
     last_height = driver.execute_script("return document.body.scrollHeight")
     
@@ -103,10 +114,10 @@ def get_product_links(driver, query):
                 break
         last_height = new_height
 
+    print(f"[{shop_name}] Найдено уникальных ссылок: {len(links)}")
     return list(links)
 
 def get_store_type(address):
-    """Определение типа магазина по адресу"""
     addr_lower = address.lower()
     if "интернет-магазин" in addr_lower or "av.ru" in addr_lower:
         return "Интернет-магазин"
@@ -117,11 +128,11 @@ def get_store_type(address):
     else:
         return "Супермаркет"
 
-def parse_product(driver, url, retail_name):
+def parse_product(driver, url, retail_name, shop_name):
     driver.get(url)
     time.sleep(2)
     
-    if not check_and_bypass_waf(driver):
+    if not check_and_bypass_waf(driver, shop_name):
         return []
 
     results = []
@@ -131,17 +142,15 @@ def parse_product(driver, url, retail_name):
             EC.presence_of_element_located((By.CSS_SELECTOR, "[data-testid='product-name']"))
         )
     except TimeoutException:
-        print(f"⚠️ Товар не загрузился: {url}")
+        print(f"[{shop_name}] Ошибка загрузки карточки товара: {url}")
         return results
 
     soup = BeautifulSoup(driver.page_source, 'html.parser')
 
-    # Название
     name_elem = soup.select_one("[data-testid='product-name']")
     name = name_elem.text.strip() if name_elem else ""
 
-    # Бренд из таблицы атрибутов
-    brand = "Азбука Вкуса" # Дефолтное значение
+    brand = "Азбука Вкуса"
     info_items = soup.select(".product-about-info_table_item")
     for item in info_items:
         key_elem = item.select_one(".product-about-info_table_item_name")
@@ -151,18 +160,15 @@ def parse_product(driver, url, retail_name):
                 brand = val_elem.text.strip()
             break
 
-    # Артикул (GTIN)
     art_elem = soup.select_one(".product-cart-header__code")
     product_id = re.sub(r'\D', '', art_elem.text.strip()) if art_elem else ""
 
-    # Вес (отрезаем штуки "1 шт, 1 кг" -> "1 кг")
     weight_elem = soup.select_one("[data-testid='product-measure']")
     weight = ""
     if weight_elem:
         raw_weight = weight_elem.text.strip()
         weight = raw_weight.split(',')[-1].strip()
 
-    # Рейтинг
     rating_elem = soup.select_one(".stars_cnt")
     rating = None
     if rating_elem:
@@ -170,7 +176,6 @@ def parse_product(driver, url, retail_name):
         if rating_clean:
             rating = float(rating_clean)
 
-    # Фото товара (достаем из атрибута style: background-image: url("..."))
     photo_url = ""
     img_elem = soup.select_one(".default-image_image")
     if img_elem and img_elem.has_attr("style"):
@@ -181,7 +186,6 @@ def parse_product(driver, url, retail_name):
     if photo_url.startswith('/'):
         photo_url = f"https://av.ru{photo_url}"
 
-    # Цены
     promo_price = None
     current_price = None
     price_box = soup.select_one(".product-cart-special_main")
@@ -195,7 +199,6 @@ def parse_product(driver, url, retail_name):
             promo_price = current_price
             current_price = clean_price(old_price_elem.text)
 
-    # Парсинг остатков по магазинам
     has_stock_data = False
     try:
         stock_btn_xpath = "//div[contains(@class, 'button_content') and contains(text(), 'Наличие в магазинах')]/.."
@@ -242,7 +245,7 @@ def parse_product(driver, url, retail_name):
     if not has_stock_data:
         results.append({
             "Номер": 0,
-            "Сеть": retail_name, # Берем Сеть из конфига
+            "Сеть": retail_name,
             "Тип магазина": "Супермаркет",
             "Адрес Торговой точки": "",
             "Бренд": brand,

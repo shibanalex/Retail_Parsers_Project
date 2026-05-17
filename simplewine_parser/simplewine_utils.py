@@ -7,7 +7,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-def check_and_bypass_waf(driver):
+def check_and_bypass_waf(driver, shop_name):
     try:
         age_btn = WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable((By.XPATH, "//button[.//span[contains(text(), 'Подтверждаю')]] | //button[contains(text(), 'Подтверждаю')] | //button[contains(translate(text(), 'ПОДТВЕРДИТЬ', 'подтвердить'), 'подтвердить')]"))
@@ -18,28 +18,39 @@ def check_and_bypass_waf(driver):
         pass
     return True
 
-def set_city(driver, city_name):
-    driver.get("https://simplewine.ru/")
-    check_and_bypass_waf(driver)
+def set_city(driver, city_name, shop_name):
+    try:
+        driver.get("https://simplewine.ru/")
+    except Exception as e:
+        print(f"[{shop_name}] Ошибка 404. Не удалось загрузить страницу. {e}")
+        return 404
+
+    check_and_bypass_waf(driver, shop_name)
     
     try:
         city_btn = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.XPATH, "//header//div[contains(@class, 'city')]//button | //header//button[contains(@class, 'location')] | /html/body/div[1]/div/div/header/div/div/div[1]/div/div/div/ul[2]/li[1]/div/button"))
         )
-        
         driver.execute_script("arguments[0].click();", city_btn)
-        time.sleep(1)
+        time.sleep(1.5)
+    except TimeoutException:
+        print(f"[{shop_name}] Ошибка 403. Элемент выбора города не найден.")
+        return 403
         
+    try:
         target_city_btn = WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable((By.XPATH, f"//li[contains(text(), '{city_name}')] | //div[contains(@class, 'modal')]//li[contains(., '{city_name}')]"))
         )
         driver.execute_script("arguments[0].click();", target_city_btn)
         time.sleep(2)
-        return True
-    except Exception:
-        return False
+        return 200
+    except TimeoutException:
+        return 999
+    except Exception as e:
+        print(f"[{shop_name}] Ошибка 500 при выборе города: {e}")
+        return 500
 
-def get_product_links(driver, query):
+def get_product_links(driver, query, shop_name):
     links = set()
     try:
         search_input = WebDriverWait(driver, 10).until(
@@ -115,9 +126,10 @@ def get_product_links(driver, query):
                 
             time.sleep(2) 
             
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[{shop_name}] Ошибка при поиске '{query}': {e}")
         
+    print(f"[{shop_name}] Найдено ссылок: {len(links)}")
     return list(links)
 
 def clean_price(price_str):
@@ -125,11 +137,11 @@ def clean_price(price_str):
     cleaned = re.sub(r'[^\d.,]', '', str(price_str).replace(',', '.'))
     try:
         return float(cleaned)
-    except:
+    except ValueError:
         return 0.0
 
-def parse_product(driver, product_url, retail_name, city_name):
-    results =[]
+def parse_product(driver, product_url, retail_name, city_name, shop_name):
+    results = []
     try:
         driver.get(product_url)
         
@@ -269,7 +281,7 @@ def parse_product(driver, product_url, retail_name, city_name):
                 "GTIN": gtin
             })
 
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[{shop_name}] Ошибка при парсинге карточки {product_url}: {e}")
         
     return results

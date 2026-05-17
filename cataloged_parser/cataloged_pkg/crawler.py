@@ -1,14 +1,13 @@
 import time
 import requests
-import config
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from parsers_core.utils import update_retail_points
-from .browser import init_driver
-from parsers_core.captcha_bypass import bypass_cataloged_antibot
-from .html_parser import transliterate_city, parse_shops_list, parse_products_page, get_max_page, get_category_from_html
 
-PARSER_NAME = "Cataloged"
+import config
+from parsers_core.utils import update_retail_points
+from parsers_core.captcha_bypass import bypass_cataloged_antibot
+from .browser import init_driver
+from .html_parser import transliterate_city, parse_shops_list, parse_products_page, get_max_page, get_category_from_html
 
 def is_product_match(name, keywords):
     if not keywords: return True 
@@ -24,7 +23,12 @@ def fetch_page_raw(session, url, page_num, keywords, city, shop_name, parser_typ
         time.sleep(random.uniform(0.5, 1.5))
         resp = session.get(url, timeout=25)
         
+        if resp.status_code in (403, 404):
+            print(f"[{shop_name}] Ошибка {resp.status_code} при запросе страницы {url}")
+            return []
+
         if "Loading..." in resp.text or "adblock-blocker" in resp.text:
+            print(f"[{shop_name}] Ошибка 403. Обнаружена блокировка на странице {url}")
             return []
             
         products = parse_products_page(resp.text)
@@ -48,7 +52,7 @@ def fetch_page_raw(session, url, page_num, keywords, city, shop_name, parser_typ
 
                 matches.append({
                     "Номер": 0, 
-                    "Сеть": shop_name,
+                    "Сеть": p.get('target_shop_name', shop_name),
                     "Тип магазина": parser_type,
                     "Адрес Торговой точки": city,
                     "Бренд": None,
@@ -64,40 +68,48 @@ def fetch_page_raw(session, url, page_num, keywords, city, shop_name, parser_typ
                     "Категория": category
                 })
         return matches
-    except:
+    except Exception as e:
         return []
 
-def run_collection():
+def run_collection(shop_name):
     cities = getattr(config, 'cities', [])
     keywords = getattr(config, 'search_req', []) + getattr(config, 'brand', [])
     targets = getattr(config, 'agrigator', [])
     
-    parser_key = "https://www.cataloged.ru/"
-    parsers_dict = getattr(config, 'parsers', {})
-    PARSER_TYPE = parsers_dict.get(parser_key, "Агрегатор") 
-    
-    if not cities: return []
+    parser_type = "Агрегатор"
+    if not cities: 
+        return []
     
     driver = init_driver(headless=False)
     all_results = []
 
     try:
         for city in cities:
+            print(f"[{shop_name}] Поиск города: {city}")
             slug = transliterate_city(city)
-            driver.get(f"https://www.cataloged.ru/gorod/{slug}/")
+            city_url = f"https://www.cataloged.ru/gorod/{slug}/"
+            
+            driver.get(city_url)
             bypass_cataloged_antibot(driver) 
             
+            if "404" in driver.title or "Страница не найдена" in driver.page_source:
+                print(f"[{shop_name}] Ошибка 999. Город '{city}' не найден на сайте.")
+                continue
+            
             shops = parse_shops_list(driver.page_source, targets)
+            if not shops:
+                print(f"[{shop_name}] В городе '{city}' не найдено целевых сетей.")
+                continue
+
             city_total = 0
 
-            for shop_name, shop_url in shops.items():
-                print(f"   🏪 {shop_name}")
+            for target_shop_name, shop_url in shops.items():
+                print(f"[{shop_name}] Сбор данных для сети: {target_shop_name}")
                 base_url = shop_url.rstrip('/') + "/?filter=produkty"
                 driver.get(base_url)
                 bypass_cataloged_antibot(driver) 
                 
                 max_p = get_max_page(driver.page_source)
-                print(f"      📄 Страниц: {max_p}")
                 
                 session = requests.Session()
                 user_agent = driver.execute_script("return navigator.userAgent;")
@@ -106,6 +118,7 @@ def run_collection():
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     "Referer": base_url
                 })
+                
                 for c in driver.get_cookies():
                     session.cookies.set(c['name'], c['value'])
 
@@ -115,19 +128,20 @@ def run_collection():
                     tasks_urls.append((u, p))
 
                 with ThreadPoolExecutor(max_workers=5) as executor:
-                    futures = [executor.submit(fetch_page_raw, session, u, p, keywords, city, shop_name, PARSER_TYPE) for u, p in tasks_urls]
+                    futures = [executor.submit(fetch_page_raw, session, u, p, keywords, city, target_shop_name, parser_type) for u, p in tasks_urls]
                     for f in as_completed(futures):
                         res = f.result()
                         if res:
                             all_results.extend(res)
                             city_total += len(res)
                 
-                print(f"      ✅ Найдено: {city_total}")
-
-            update_retail_points(PARSER_NAME, city, city_total)
+            try:
+                update_retail_points(shop_name, city, city_total)
+            except:
+                pass
 
     except Exception as e:
-        print(f"Ошибка: {e}")
+        print(f"[{shop_name}] Ошибка выполнения: {e}")
     finally:
         driver.quit()
         

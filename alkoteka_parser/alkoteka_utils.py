@@ -5,23 +5,28 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException
 
-def check_and_bypass_waf(driver):
+def check_and_bypass_waf(driver, shop_name):
     try:
         age_btn = WebDriverWait(driver, 5).until(
             EC.element_to_be_clickable((By.XPATH, "//button[contains(translate(text(), 'ЕСТЬ', 'есть'), 'есть') or contains(text(), '18')]"))
         )
         age_btn.click()
         time.sleep(1)
-        print("Плашка 18+ закрыта.")
+        print(f"[{shop_name}] ✅ Плашка 18+ закрыта.")
     except TimeoutException:
         pass
     return True
 
-def set_city(driver, city_name):
-    driver.get("https://alkoteka.com/")
-    check_and_bypass_waf(driver)
+def set_city(driver, city_name, shop_name):
+    try:
+        driver.get("https://alkoteka.com/")
+    except Exception as e:
+        print(f"[{shop_name}] ❌ Ошибка 404: Не удалось загрузить главную страницу. ({e})")
+        return 404
+
+    check_and_bypass_waf(driver, shop_name)
     
     try:
         city_btn = WebDriverWait(driver, 10).until(
@@ -30,7 +35,7 @@ def set_city(driver, city_name):
         current_city = city_btn.text.strip()
         
         if city_name.lower() in current_city.lower():
-            print(f"Город уже установлен: {city_name}")
+            print(f"[{shop_name}] ✅ Город уже установлен: {city_name}")
             return True
             
         driver.execute_script("arguments[0].click();", city_btn)
@@ -39,18 +44,25 @@ def set_city(driver, city_name):
             EC.presence_of_element_located((By.CLASS_NAME, "modal-locality__list"))
         )
         
-        target_city_btn = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable((By.XPATH, f"//button[contains(@class, 'modal-locality__list-item') and contains(text(), '{city_name}')]"))
-        )
-        driver.execute_script("arguments[0].click();", target_city_btn)
-        time.sleep(2)
-        print(f"Город изменен на: {city_name}")
-        return True
-    except Exception as e:
-        print(f"Ошибка при выборе города: {e}")
-        return False
+        try:
+            target_city_btn = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, f"//button[contains(@class, 'modal-locality__list-item') and contains(text(), '{city_name}')]"))
+            )
+            driver.execute_script("arguments[0].click();", target_city_btn)
+            time.sleep(2)
+            print(f"[{shop_name}] ✅ Город изменен на: {city_name}")
+            return True
+        except TimeoutException:
+            return 999
 
-def get_product_links(driver, query):
+    except TimeoutException:
+        print(f"[{shop_name}] ❌ Ошибка 403: Кнопка выбора города не найдена (возможно блокировка/WAF).")
+        return 403
+    except Exception as e:
+        print(f"[{shop_name}] ❌ Ошибка 500: Неизвестная ошибка при выборе города: {e}")
+        return 500
+
+def get_product_links(driver, query, shop_name):
     links = set()
     try:
         search_trigger = WebDriverWait(driver, 10).until(
@@ -70,7 +82,7 @@ def get_product_links(driver, query):
             EC.presence_of_element_located((By.CLASS_NAME, "card-product"))
         )
         
-        print(f"Начинаем листать список для '{query}'...")
+        print(f"[{shop_name}] 🔄 Начинаем листать список для '{query}'...")
         
         retries = 0       
         max_retries = 4   
@@ -98,7 +110,6 @@ def get_product_links(driver, query):
                 retries += 1
                 
             if retries >= max_retries:
-                print("Достигнут конец списка товаров.")
                 break
                 
             try:
@@ -112,10 +123,10 @@ def get_product_links(driver, query):
                 
             time.sleep(2) 
             
-        print(f"ИТОГО найдено уникальных ссылок в наличии для '{query}': {len(links)}")
+        print(f"[{shop_name}] 📊 ИТОГО найдено уникальных ссылок в наличии: {len(links)}")
         
     except Exception as e:
-        print(f"Ошибка при поиске '{query}': {e}")
+        print(f"[{shop_name}] ❌ Ошибка при поиске '{query}': {e}")
         
     return list(links)
 
@@ -127,8 +138,8 @@ def clean_price(price_str):
     except:
         return 0.0
 
-def parse_product(driver, product_url, retail_name, city_name):
-    results =[]
+def parse_product(driver, product_url, retail_name, city_name, shop_name):
+    results = []
     try:
         driver.get(product_url)
         
@@ -197,7 +208,7 @@ def parse_product(driver, product_url, retail_name, city_name):
             )
             time.sleep(1)
         except TimeoutException:
-            print(f"Магазины списком не найдены для: {product_name}")
+            pass 
 
         soup_shops = BeautifulSoup(driver.page_source, 'html.parser')
         shop_cards = soup_shops.find_all('div', class_='card-map')
@@ -251,6 +262,6 @@ def parse_product(driver, product_url, retail_name, city_name):
             })
 
     except Exception as e:
-        print(f"Ошибка при парсинге карточки {product_url}: {e}")
+        print(f"[{shop_name}] ❌ Ошибка при парсинге карточки {product_url}: {e}")
         
     return results
