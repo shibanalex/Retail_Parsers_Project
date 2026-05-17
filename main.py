@@ -29,7 +29,7 @@ uc.Chrome.__del__ = _patched_del
 #from kib_parser import kib
 #from chizhik_parser import chizhik
 #from spar_parser import spar
-# from pyaterochka_parser import pyaterochka
+from pyaterochka_parser import pyaterochka
 #from riat_parser import riat
 #from smart_parser import smart
 #from dixy_parser import dixy
@@ -71,7 +71,7 @@ parsers_funcs = {
 #    "https://bristol.ru/": bristol,
 #    "https://chizhik.club/": chizhik,
 #    "https://myspar.ru/": spar,
-#    "https://5ka.ru/": pyaterochka,
+   "https://5ka.ru/": pyaterochka,
 #    "https://krasnoeibeloe.ru/": kib,
 #    "https://svetoforonline.ru/": svetofor,
 #    "https://vliga.com": vliga,
