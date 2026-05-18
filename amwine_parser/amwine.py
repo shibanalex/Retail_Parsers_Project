@@ -8,7 +8,8 @@ from .browser import get_browser
 from .amwine_utils import select_shop, get_product_links, parse_product
 
 def get_all_data(shop_name):
-    driver = get_browser()
+    # Указываем секцию для парсера
+    driver = get_browser("AMWINE")
     all_data = []
 
     try:

@@ -18,9 +18,10 @@ def is_product_match(name, keywords):
             return True
     return False
 
-def fetch_page_raw(session, url, page_num, keywords, city, shop_name, parser_type):
+def fetch_page_raw(session, url, page_num, keywords, city, shop_name, parser_type, min_delay, max_delay):
     try:
-        time.sleep(random.uniform(0.5, 1.5))
+        # Умная пауза для потоков
+        time.sleep(random.uniform(min_delay, max_delay))
         resp = session.get(url, timeout=25)
         
         if resp.status_code in (403, 404):
@@ -80,7 +81,13 @@ def run_collection(shop_name):
     if not cities: 
         return []
     
-    driver = init_driver(headless=False)
+    # Инициализация с пробросом секции "CATALOGED"
+    driver = init_driver("CATALOGED", headless=False)
+    
+    # Извлекаем параметры паузы для потоков requests
+    c_min_delay = getattr(driver, 'custom_min_delay', 1.0)
+    c_max_delay = getattr(driver, 'custom_max_delay', 3.0)
+    
     all_results = []
 
     try:
@@ -128,7 +135,10 @@ def run_collection(shop_name):
                     tasks_urls.append((u, p))
 
                 with ThreadPoolExecutor(max_workers=5) as executor:
-                    futures = [executor.submit(fetch_page_raw, session, u, p, keywords, city, target_shop_name, parser_type) for u, p in tasks_urls]
+                    futures = [
+                        executor.submit(fetch_page_raw, session, u, p, keywords, city, target_shop_name, parser_type, c_min_delay, c_max_delay) 
+                        for u, p in tasks_urls
+                    ]
                     for f in as_completed(futures):
                         res = f.result()
                         if res:

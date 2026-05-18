@@ -1,4 +1,5 @@
 import time
+import random
 import traceback
 import config
 from selenium.common.exceptions import TimeoutException
@@ -13,6 +14,12 @@ from .html_parser import transliterate_city, parse_stores, parse_search_results,
 
 BASE_URL = "https://www.magazinnoff.ru"
 
+def smart_sleep(driver, fallback=2.0):
+    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
+        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
+    else:
+        time.sleep(fallback)
+
 def get_details_in_tab(driver, link, fallback_name):
     brand, weight, volume, exact_price, category = None, None, None, None, None
     if not link: 
@@ -21,7 +28,7 @@ def get_details_in_tab(driver, link, fallback_name):
     original_window = driver.current_window_handle
     try:
         driver.execute_script("window.open(arguments[0], '_blank');", link)
-        time.sleep(1)
+        smart_sleep(driver, 1.5)
         
         new_window = [w for w in driver.window_handles if w != original_window][0]
         driver.switch_to.window(new_window)
@@ -56,7 +63,7 @@ def run_collection(shop_name):
     if not cities or not queries:
         return []
 
-    driver = init_driver(headless=False)
+    driver = init_driver("MAGAZINNOFF", headless=False)
     all_results = []
 
     try:
@@ -104,7 +111,7 @@ def run_collection(shop_name):
                             print(f"[{shop_name}] Ошибка загрузки страницы сети {s_name}.")
                             continue
                             
-                        time.sleep(1.5)
+                        smart_sleep(driver, 1.5)
 
                         js_search = f"""
                         var f=document.createElement('form');
@@ -128,7 +135,7 @@ def run_collection(shop_name):
                         bypass_cloudflare_humanity(driver, timeout=10)
                         
                         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                        time.sleep(2)
+                        smart_sleep(driver, 2.5)
 
                         items_list = parse_search_results(driver.page_source, s_name)
                         if not items_list:

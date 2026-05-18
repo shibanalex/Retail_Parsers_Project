@@ -14,7 +14,7 @@ except ImportError:
 from parsers_core.utils import update_retail_points
 from .vkusvill_config import VKUSVILL_CITIES_MAP, VKUSVILL_VALID_ADDRESSES
 from .browser import get_browser
-from .vkusvill_utils import set_city_address, filter_dynamic_query, parse_html_to_items
+from .vkusvill_utils import set_city_address, filter_dynamic_query, parse_html_to_items, smart_sleep
 
 def get_all_data(shop_name):
     cities_to_parse = getattr(config, 'cities', [])
@@ -26,7 +26,7 @@ def get_all_data(shop_name):
         return []
 
     full_items_data = []
-    driver = get_browser()
+    driver = get_browser("VKUSVILL")
 
     try:
         for city in cities_to_parse:
@@ -39,7 +39,7 @@ def get_all_data(shop_name):
             subdomain = VKUSVILL_CITIES_MAP.get(city, "")
             try:
                 driver.get(f"https://{subdomain}vkusvill.ru/")
-                time.sleep(4)
+                smart_sleep(driver, 4.0)
             except Exception:
                 print(f"[{shop_name}] Ошибка 404. Не удалось загрузить сайт для города {city}.")
                 continue
@@ -61,7 +61,7 @@ def get_all_data(shop_name):
                     search_url = f"https://{subdomain}vkusvill.ru/search/?q={quote(query)}&PAGEN_1={page}"
                     try:
                         driver.get(search_url)
-                        time.sleep(random.uniform(3.0, 4.0))
+                        smart_sleep(driver, 3.5)
                         
                         if "qrator" in driver.page_source.lower():
                             print(f"[{shop_name}] Ошибка 403. Блокировка Qrator на поиске.")

@@ -1,4 +1,5 @@
 import time
+import random
 import re
 import urllib.parse
 from bs4 import BeautifulSoup
@@ -8,6 +9,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException
+
+def smart_sleep(driver, fallback=2.0):
+    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
+        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
+    else:
+        time.sleep(fallback)
 
 def force_awake(driver):
     try:
@@ -64,7 +71,7 @@ def select_shop(driver, city_name, visited_addresses, shop_name):
                 EC.element_to_be_clickable((By.XPATH, '//div[contains(@class, "modal__footer")]//button[contains(., "Хорошо")]'))
             )
             driver.execute_script("arguments[0].click();", ok_btn)
-            time.sleep(3)
+            time.sleep(2)
         except:
             pass
 
@@ -81,7 +88,7 @@ def select_shop(driver, city_name, visited_addresses, shop_name):
                     EC.element_to_be_clickable((By.XPATH, f'//button[contains(@class, "select__option-button") and contains(., "{city_name}")]'))
                 )
                 driver.execute_script("arguments[0].click();", target_city)
-                time.sleep(5) 
+                smart_sleep(driver, 5) 
             except TimeoutException:
                 return 999, None
 
@@ -107,7 +114,7 @@ def select_shop(driver, city_name, visited_addresses, shop_name):
                         driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'instant'});", select_btn)
                         time.sleep(0.5)
                         driver.execute_script("arguments[0].click();", select_btn)
-                        time.sleep(3)
+                        smart_sleep(driver, 3)
                         return 200, addr
                 except:
                     break
@@ -128,7 +135,7 @@ def select_shop(driver, city_name, visited_addresses, shop_name):
                         parent = parent.parentNode;
                     }
                 """, last_shop)
-                time.sleep(2) 
+                smart_sleep(driver, 2) 
 
                 if current_last_addr == last_scrolled_address:
                     scroll_stuck_counter += 1
@@ -168,7 +175,7 @@ def get_product_links(driver, query, shop_name):
     try:
         driver.get("https://amwine.ru/")
         check_and_bypass_waf(driver)
-        time.sleep(2)
+        smart_sleep(driver, 2)
 
         header = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.TAG_NAME, "header"))
@@ -191,7 +198,7 @@ def get_product_links(driver, query, shop_name):
         ActionChains(driver).move_to_element(search_input).click().send_keys(query).perform()
         time.sleep(1)
         search_input.send_keys(Keys.ENTER)
-        time.sleep(5)
+        smart_sleep(driver, 4)
 
         soup = BeautifulSoup(driver.page_source, "html.parser")
         max_page = 1
@@ -208,7 +215,7 @@ def get_product_links(driver, query, shop_name):
             if page > 1:
                 next_page_url = update_url_page(base_url, page)
                 driver.get(next_page_url)
-                time.sleep(3)
+                smart_sleep(driver, 3)
             
             scroll_page_smoothly(driver)
             soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -234,7 +241,7 @@ def get_product_links(driver, query, shop_name):
 def parse_product(driver, url, retail_name, city, address, shop_name):
     try:
         driver.get(url)
-        time.sleep(2)
+        smart_sleep(driver, 2)
         check_and_bypass_waf(driver)
         
         page_src = driver.page_source.lower()

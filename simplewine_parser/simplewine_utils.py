@@ -1,4 +1,5 @@
 import time
+import random
 import re
 from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
@@ -6,6 +7,12 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+
+def smart_sleep(driver, fallback=2.0):
+    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
+        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
+    else:
+        time.sleep(fallback)
 
 def check_and_bypass_waf(driver, shop_name):
     try:
@@ -32,7 +39,7 @@ def set_city(driver, city_name, shop_name):
             EC.presence_of_element_located((By.XPATH, "//header//div[contains(@class, 'city')]//button | //header//button[contains(@class, 'location')] | /html/body/div[1]/div/div/header/div/div/div[1]/div/div/div/ul[2]/li[1]/div/button"))
         )
         driver.execute_script("arguments[0].click();", city_btn)
-        time.sleep(1.5)
+        smart_sleep(driver, 1.5)
     except TimeoutException:
         print(f"[{shop_name}] Ошибка 403. Элемент выбора города не найден.")
         return 403
@@ -42,7 +49,7 @@ def set_city(driver, city_name, shop_name):
             EC.element_to_be_clickable((By.XPATH, f"//li[contains(text(), '{city_name}')] | //div[contains(@class, 'modal')]//li[contains(., '{city_name}')]"))
         )
         driver.execute_script("arguments[0].click();", target_city_btn)
-        time.sleep(2)
+        smart_sleep(driver, 2.0)
         return 200
     except TimeoutException:
         return 999
@@ -63,7 +70,7 @@ def get_product_links(driver, query, shop_name):
             EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/div/header/div/div/div[2]/div/div[2]/form/label/div/button/span | //button[@type='submit']"))
         )
         driver.execute_script("arguments[0].click();", search_btn)
-        time.sleep(3)
+        smart_sleep(driver, 3.0)
         
         cards_found = False
         try:
@@ -82,7 +89,7 @@ def get_product_links(driver, query, shop_name):
                 search_input_404.clear()
                 search_input_404.send_keys(query)
                 search_input_404.send_keys(Keys.ENTER)
-                time.sleep(3)
+                smart_sleep(driver, 3.0)
                 
                 WebDriverWait(driver, 10).until(
                     EC.presence_of_element_located((By.CLASS_NAME, "snippet"))
@@ -124,7 +131,7 @@ def get_product_links(driver, query, shop_name):
             except Exception:
                 pass
                 
-            time.sleep(2) 
+            smart_sleep(driver, 2.0)
             
     except Exception as e:
         print(f"[{shop_name}] Ошибка при поиске '{query}': {e}")
@@ -148,7 +155,7 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.TAG_NAME, "h1"))
         )
-        time.sleep(1)
+        smart_sleep(driver, 1.5)
         
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         
@@ -224,12 +231,12 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
                 EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/div/main/div[1]/div[2]/div[2]/div/div[1]/div[2]/div[2]/div[1]/div[4]/div/div[1]/span/button | //button[contains(., 'Наличие')]"))
             )
             driver.execute_script("arguments[0].click();", avail_btn)
-            time.sleep(2)
+            smart_sleep(driver, 2.0)
             
             try:
                 list_view_btn = driver.find_element(By.XPATH, "//button[contains(., 'Списком')] | //div[contains(text(), 'Списком')] | /html/body/div[1]/div/div/main/div[4]/div/div[1]/div/div[1]/div[2]/div[2]/div/button[2]")
                 driver.execute_script("arguments[0].click();", list_view_btn)
-                time.sleep(2)
+                smart_sleep(driver, 2.0)
             except Exception:
                 pass
                 

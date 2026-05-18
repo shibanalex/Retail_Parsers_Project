@@ -7,8 +7,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from cataloged_pkg.crawler import run_collection
 
 def main(shop_name="Cataloged"):
-    start = time.time()
-    
     try:
         all_data = run_collection(shop_name)
         return all_data

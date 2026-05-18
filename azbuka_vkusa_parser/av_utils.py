@@ -8,6 +8,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
+def smart_sleep(driver, fallback=2.0):
+    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
+        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
+    else:
+        time.sleep(fallback)
+
 def clean_price(price_str):
     if not price_str:
         return None
@@ -25,7 +31,7 @@ def check_and_bypass_waf(driver, shop_name):
             time.sleep(random.uniform(1.5, 3.5))
             
         driver.refresh()
-        time.sleep(5)
+        smart_sleep(driver, 5)
         
         if "Ваш запрос был заблокирован" in driver.page_source:
             print(f"[{shop_name}] Ошибка 403. Обход блокировки не удался.")
@@ -35,7 +41,7 @@ def check_and_bypass_waf(driver, shop_name):
 def set_city(driver, city_name, shop_name):
     try:
         driver.get("https://av.ru/")
-        time.sleep(3)
+        smart_sleep(driver, 3)
     except Exception as e:
         print(f"[{shop_name}] Ошибка 404. Не удалось загрузить главную страницу. {e}")
         return 404
@@ -61,7 +67,7 @@ def set_city(driver, city_name, shop_name):
         try:
             city_option = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, xpath_city)))
             driver.execute_script("arguments[0].click();", city_option)
-            time.sleep(3) 
+            smart_sleep(driver, 3) 
             return 200
         except TimeoutException:
             return 999
@@ -76,7 +82,7 @@ def set_city(driver, city_name, shop_name):
 def get_product_links(driver, query, shop_name):
     url = f"https://av.ru/search?freeText={query}"
     driver.get(url)
-    time.sleep(3)
+    smart_sleep(driver, 3)
     
     if not check_and_bypass_waf(driver, shop_name):
         return []
@@ -104,11 +110,11 @@ def get_product_links(driver, query, shop_name):
                 links.add(f"https://av.ru{href}" if href.startswith('/') else href)
                 
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(2.5) 
+        smart_sleep(driver, 2.5) 
         
         new_height = driver.execute_script("return document.body.scrollHeight")
         if new_height == last_height:
-            time.sleep(3)
+            smart_sleep(driver, 3)
             new_height = driver.execute_script("return document.body.scrollHeight")
             if new_height == last_height:
                 break
@@ -130,7 +136,7 @@ def get_store_type(address):
 
 def parse_product(driver, url, retail_name, shop_name):
     driver.get(url)
-    time.sleep(2)
+    smart_sleep(driver, 2)
     
     if not check_and_bypass_waf(driver, shop_name):
         return []

@@ -29,7 +29,7 @@ uc.Chrome.__del__ = _patched_del
 #from kib_parser import kib
 #from chizhik_parser import chizhik
 #from spar_parser import spar
-from pyaterochka_parser import pyaterochka
+#from pyaterochka_parser import pyaterochka
 #from riat_parser import riat
 #from smart_parser import smart
 #from dixy_parser import dixy
@@ -37,10 +37,10 @@ from pyaterochka_parser import pyaterochka
 #from maxi_parser import maxi
 #from globus_parser import globus
 #from svetofor_parser import svetofor
-#from magazinnoff_parser import magazinnoff
+# from magazinnoff_parser import magazinnoff
 #from cataloged_parser import cataloged
 #from vkusvill_parser import vkusvill
-#from azbuka_vkusa_parser import av
+# from azbuka_vkusa_parser import av
 #from tvoydom_parser import tvoydom
 # from alkoteka_parser import alkoteka
 # from simplewine_parser import simplewine
@@ -71,7 +71,7 @@ parsers_funcs = {
 #    "https://bristol.ru/": bristol,
 #    "https://chizhik.club/": chizhik,
 #    "https://myspar.ru/": spar,
-   "https://5ka.ru/": pyaterochka,
+#    "https://5ka.ru/": pyaterochka,
 #    "https://krasnoeibeloe.ru/": kib,
 #    "https://svetoforonline.ru/": svetofor,
 #    "https://vliga.com": vliga,
@@ -82,7 +82,7 @@ parsers_funcs = {
 #   "https://magazinnoff.ru/": magazinnoff,
 #   "https://cataloged.ru/": cataloged,
 #    "https://vkusvill.ru/": vkusvill,
-#   "https://av.ru/": av,
+    # "https://av.ru/": av,
 #    "https://tvoydom.ru/": tvoydom,
     # "https://alkoteka.com/": alkoteka,
 #    "https://simplewine.ru/": simplewine,

@@ -1,10 +1,17 @@
 import time
+import random
 import re
 from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from .vkusvill_config import VKUSVILL_VALID_ADDRESSES
+
+def smart_sleep(driver, fallback=2.0):
+    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
+        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
+    else:
+        time.sleep(fallback)
 
 def set_city_address(driver, city_name, shop_name):
     safe_address = VKUSVILL_VALID_ADDRESSES.get(city_name, f"{city_name}, улица Ленина, 1")
@@ -14,30 +21,30 @@ def set_city_address(driver, city_name, shop_name):
             EC.element_to_be_clickable((By.CSS_SELECTOR, ".HeaderATDToggler._address button"))
         )
         driver.execute_script("arguments[0].click();", addr_btn)
-        time.sleep(2)
+        time.sleep(1.5)
 
         input_area = WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "textarea#js-my-addresses-address, input#js-my-addresses-address"))
         )
         input_area.clear()
         input_area.send_keys(safe_address)
-        time.sleep(4) 
+        smart_sleep(driver, 3.0) 
 
         suggestion = WebDriverWait(driver, 7).until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, "#js-my-addresses-suggests-delivery .VV_DMenuContentList button"))
         )
         driver.execute_script("arguments[0].click();", suggestion)
-        time.sleep(5) 
+        smart_sleep(driver, 4.0) 
 
         buttons = driver.find_elements(By.XPATH, "//button[contains(@class, 'VV_Button') and (contains(text(), 'Сохранить') or contains(text(), 'Выбрать'))]")
         for btn in buttons:
             if btn.is_displayed() and "_disabled" not in btn.get_attribute("class"):
                 driver.execute_script("arguments[0].click();", btn)
-                time.sleep(3)
+                smart_sleep(driver, 2.0)
                 break
         
         driver.refresh()
-        time.sleep(3)
+        smart_sleep(driver, 3.0)
         return True
     except Exception:
         return False

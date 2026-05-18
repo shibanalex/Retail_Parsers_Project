@@ -8,7 +8,7 @@ from .browser import get_browser
 from .av_utils import set_city, get_product_links, parse_product
 
 def get_all_data(shop_name):
-    driver = get_browser()
+    driver = get_browser("AV")
     all_data = []
 
     try:

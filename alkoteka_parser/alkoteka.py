@@ -9,36 +9,36 @@ from .browser import get_browser
 from .alkoteka_utils import set_city, get_product_links, parse_product
 
 def get_all_data(shop_name):
-    driver = get_browser()
+    # Указываем секцию для парсера
+    driver = get_browser("ALKOTEKA")
     all_data = []
 
     try:
         for actual_city_name in cities:
-            print(f"[{shop_name}] 🏙️ Поиск города: {actual_city_name}...")
+            print(f"[{shop_name}] Поиск города: {actual_city_name}")
             
             status_code = set_city(driver, actual_city_name, shop_name)
             
             if status_code == 999:
-                print(f"[{shop_name}] ❌ Ошибка 999: Город '{actual_city_name}' не найден на сайте.")
+                print(f"[{shop_name}] Ошибка 999. Город '{actual_city_name}' не найден на сайте.")
                 continue
             elif status_code in (403, 404, 500):
-                print(f"[{shop_name}] ❌ Ошибка {status_code}: Проблема с доступом к сайту (возможна блокировка или капча). Пропуск.")
+                print(f"[{shop_name}] Ошибка {status_code}. Проблема с доступом к сайту.")
                 break 
 
             points_count = 1
 
             for query in search_req:
-                print(f"[{shop_name}] 🛒 Сбор данных по запросу: {query}...")
+                print(f"[{shop_name}] Сбор данных по запросу: {query}")
                 product_links = get_product_links(driver, query, shop_name)
 
                 if not product_links:
-                    print(f"[{shop_name}] ⚠️ По запросу '{query}' ничего не найдено.")
+                    print(f"[{shop_name}] По запросу '{query}' ничего не найдено.")
                     continue
 
                 for link_data in product_links:
                     product_data_list = parse_product(driver, link_data, shop_name, actual_city_name, shop_name)
                     all_data.extend(product_data_list)
-
             
             if all_data:
                 try:
@@ -47,7 +47,7 @@ def get_all_data(shop_name):
                     pass
 
     except Exception as e:
-        print(f"[{shop_name}] ❌ Критическая ошибка работы парсера: {e}")
+        print(f"[{shop_name}] Критическая ошибка работы парсера: {e}")
     finally:
         driver.quit()
 
@@ -57,9 +57,6 @@ def get_all_data(shop_name):
     return all_data
 
 def main(shop_name="Алкотека"):
-    """
-    Точка входа. shop_name передается из main.py
-    """
     return get_all_data(shop_name)
 
 if __name__ == "__main__":

@@ -9,6 +9,12 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
+def smart_sleep(driver, fallback=2.0):
+    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
+        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
+    else:
+        time.sleep(fallback)
+
 def clean_price(price_str):
     if not price_str:
         return None
@@ -23,7 +29,7 @@ def check_and_bypass_waf(driver, shop_name):
     if "заблокирован" in src or "cloudflare" in src or "qrator" in src:
         time.sleep(random.uniform(2.0, 3.5))
         driver.refresh()
-        time.sleep(3)
+        smart_sleep(driver, 3.0)
         if "заблокирован" in driver.page_source.lower():
             return False
     return True
@@ -60,7 +66,7 @@ def set_city(driver, city_name, shop_name):
         time.sleep(0.5)
         
         search_input.send_keys(city_name)
-        time.sleep(2)
+        smart_sleep(driver, 2.0)
         
         try:
             WebDriverWait(driver, 5).until(
@@ -78,7 +84,7 @@ def set_city(driver, city_name, shop_name):
             EC.element_to_be_clickable((By.CSS_SELECTOR, "button.location-popup__button"))
         )
         save_btn.click()
-        time.sleep(2)
+        smart_sleep(driver, 2.0)
         return 200
     except TimeoutException:
         print(f"[{shop_name}] Ошибка 403. Элементы интерфейса не найдены.")
@@ -105,9 +111,9 @@ def get_product_links(driver, query, shop_name):
             products_filter_xpath = "//li[contains(@class, 'search-categories')]//p[contains(text(), 'Продукты')]"
             products_filter = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, products_filter_xpath)))
             driver.execute_script("arguments[0].click();", products_filter)
-            time.sleep(2)
+            smart_sleep(driver, 2.0)
         except (TimeoutException, NoSuchElementException):
-            time.sleep(1.5) 
+            smart_sleep(driver, 1.5) 
     except Exception:
         return []
 
@@ -169,10 +175,10 @@ def get_product_links(driver, query, shop_name):
             }
                 
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(1) 
+        smart_sleep(driver, 1.5) 
         new_height = driver.execute_script("return document.body.scrollHeight")
         if new_height == last_height:
-            time.sleep(1.5)
+            smart_sleep(driver, 1.5)
             new_height = driver.execute_script("return document.body.scrollHeight")
             if new_height == last_height:
                 break
@@ -204,7 +210,7 @@ def parse_product(driver, product_data, retail_name, city_name, shop_name):
     try:
         tab_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Наличие в магазинах')]")
         driver.execute_script("arguments[0].click();", tab_btn)
-        time.sleep(1)
+        smart_sleep(driver, 1.0)
     except Exception:
         pass
 

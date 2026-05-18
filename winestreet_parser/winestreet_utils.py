@@ -1,4 +1,5 @@
 import time
+import random
 import re
 import urllib.parse
 from bs4 import BeautifulSoup
@@ -6,6 +7,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+
+def smart_sleep(driver, fallback=2.0):
+    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
+        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
+    else:
+        time.sleep(fallback)
 
 def check_and_bypass_waf(driver, shop_name):
     try:
@@ -31,6 +38,7 @@ def dismiss_city_popup(driver):
 def set_city(driver, city_name, shop_name):
     try:
         driver.get("https://winestreet.ru/")
+        smart_sleep(driver, 1.5)
     except Exception as e:
         print(f"[{shop_name}] Ошибка 404. Не удалось загрузить страницу. {e}")
         return 404
@@ -56,7 +64,7 @@ def set_city(driver, city_name, shop_name):
                 EC.presence_of_element_located((By.XPATH, target_city_xpath))
             )
             driver.execute_script("arguments[0].click();", target_city_btn)
-            time.sleep(3)
+            smart_sleep(driver, 3.0)
             return 200
         except TimeoutException:
             return 999
@@ -78,7 +86,7 @@ def get_product_links(driver, query, shop_name):
         while current_page <= max_pages:
             search_url = f"https://winestreet.ru/catalog/search/?filter.text={encoded_query}&page={current_page}"
             driver.get(search_url)
-            time.sleep(2)
+            smart_sleep(driver, 2.0)
             dismiss_city_popup(driver)
             
             soup = BeautifulSoup(driver.page_source, 'html.parser')
@@ -128,7 +136,7 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
     results = []
     try:
         driver.get(product_url)
-        time.sleep(1.5)
+        smart_sleep(driver, 1.5)
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         
         name_tag = soup.find('h1', attrs={"itemprop": "name"}) or soup.find('h1')
@@ -173,7 +181,7 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
                 EC.element_to_be_clickable((By.XPATH, "//a[contains(@href, '#stocks')] | //div[contains(@class, 'cardProduct--availability')]//a"))
             )
             driver.execute_script("arguments[0].click();", store_btn)
-            time.sleep(2)
+            smart_sleep(driver, 2.0)
         except:
             pass
 
