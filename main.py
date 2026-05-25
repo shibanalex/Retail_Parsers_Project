@@ -39,13 +39,18 @@ uc.Chrome.__del__ = _patched_del
 #from svetofor_parser import svetofor
 # from magazinnoff_parser import magazinnoff
 #from cataloged_parser import cataloged
-#from vkusvill_parser import vkusvill
+# from vkusvill_parser import vkusvill
 # from azbuka_vkusa_parser import av
 #from tvoydom_parser import tvoydom
 # from alkoteka_parser import alkoteka
 # from simplewine_parser import simplewine
 # from winestreet_parser import winestreet
 # from amwine_parser import amwine
+# from letu_parser import letu
+# from rivegauche_parser import rivegauche
+# from iledebeaute_parser import iledebeaute
+from goldapple_parser import goldapple
+
 
 from parsers_core.utils import write_excel
 from config import table_name, parsers #, TelegramBot
@@ -88,6 +93,11 @@ parsers_funcs = {
 #    "https://simplewine.ru/": simplewine,
     # "https://winestreet.ru/": winestreet,
     # "https://amwine.ru/": amwine,
+    # "https://www.letu.ru/": letu
+    # 'https://rivegauche.ru/': rivegauche
+    #  "https://iledebeaute.ru/": iledebeaute
+    "https://goldapple.ru/": goldapple
+    
 }
 
 def write_log(message, filename):
