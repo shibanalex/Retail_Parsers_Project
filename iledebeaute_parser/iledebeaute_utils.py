@@ -11,7 +11,20 @@ REGION_MAP = {
     "казань": "Казань",
     "краснодар": "Краснодар",
     "новосибирск": "Новосибирск",
+    "ростов-на-дону": "Ростов-на-Дону",
+    "самара": "Самара",
+    "челябинск": "Челябинск",
+    "уфа": "Уфа",
+    "нижний новгород": "Нижний Новгород",
+    "воронеж": "Воронеж",
+    "омск": "Омск"
 }
+
+def set_city(session, city_name, shop_name):
+    region_id = REGION_MAP.get(city_name.lower().strip())
+    if not region_id:
+        return 999, None
+    return 200, region_id
 
 def smart_sleep(min_val=0.5, max_val=1.5):
     time.sleep(random.uniform(min_val, max_val))
@@ -26,11 +39,9 @@ def get_session():
     })
     return session
 
-def fetch_api_data(session, query, offset, size, city_name, shop_name):
+def fetch_api_data(session, query, offset, size, region_id, shop_name):
     url = "https://sort.diginetica.net/search"
     
-    region_id = REGION_MAP.get(city_name.lower().strip(), city_name)
-
     params = {
         "st": query,
         "apiKey": "O08Q4M2T51",

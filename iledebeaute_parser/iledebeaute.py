@@ -4,9 +4,9 @@ import math
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from config import cities, search_req
+from config import cities, search_req, parsers
 from parsers_core.utils import update_retail_points
-from .iledebeaute_utils import get_session, fetch_api_data, process_product_json, smart_sleep
+from .iledebeaute_utils import get_session, set_city, fetch_api_data, process_product_json, smart_sleep
 
 def get_all_data(shop_name):
     session = get_session()
@@ -16,13 +16,22 @@ def get_all_data(shop_name):
         for actual_city_name in cities:
             print(f"[{shop_name}] Поиск города: {actual_city_name}")
 
+            status_code, region_id = set_city(session, actual_city_name, shop_name)
+            
+            if status_code == 999:
+                print(f"[{shop_name}] Ошибка 999. Город '{actual_city_name}' не найден в маппинге регионов.")
+                continue
+            elif status_code in (403, 500, 404):
+                print(f"[{shop_name}] Ошибка {status_code}. Проблема с доступом.")
+                break
+
             for query in search_req:
                 print(f"[{shop_name}] Сбор данных по запросу: {query}")
                 
                 size = 20
                 offset = 0
                 
-                first_page_data = fetch_api_data(session, query, offset, size, actual_city_name, shop_name)
+                first_page_data = fetch_api_data(session, query, offset, size, region_id, shop_name)
                 
                 if not first_page_data or "products" not in first_page_data:
                     print(f"[{shop_name}] Ошибка или пустой ответ по запросу '{query}'.")
@@ -41,7 +50,7 @@ def get_all_data(shop_name):
                     
                     if page > 0:
                         smart_sleep(0.5, 1.5)
-                        page_data = fetch_api_data(session, query, current_offset, size, actual_city_name, shop_name)
+                        page_data = fetch_api_data(session, query, current_offset, size, region_id, shop_name)
                         if not page_data or not page_data.get("products"):
                             break
                         items = page_data["products"]
@@ -69,7 +78,9 @@ def get_all_data(shop_name):
 
     return all_data
 
-def main(shop_name="Иль де Ботэ"):
+def main(shop_name=None):
+    if not shop_name:
+        shop_name = parsers.get("https://iledebeaute.ru/", "В конфиге не указано название для https://iledebeaute.ru/")
     return get_all_data(shop_name)
 
 if __name__ == "__main__":
