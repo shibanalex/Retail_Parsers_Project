@@ -49,7 +49,10 @@ uc.Chrome.__del__ = _patched_del
 # from letu_parser import letu
 # from rivegauche_parser import rivegauche
 # from iledebeaute_parser import iledebeaute
-from goldapple_parser import goldapple
+# from goldapple_parser import goldapple
+# from podrygka_parser import podrygka
+# from rulybka_parser import rulybka
+from magnit_cosmetic_parser import magnit_cosmetic
 
 
 from parsers_core.utils import write_excel
@@ -96,8 +99,10 @@ parsers_funcs = {
     # "https://www.letu.ru/": letu
     # 'https://rivegauche.ru/': rivegauche
     #  "https://iledebeaute.ru/": iledebeaute
-    "https://goldapple.ru/": goldapple
-    
+    # "https://goldapple.ru/": goldapple
+    # "https://podrygka.ru/": podrygka    
+    # 'https://rulybka.ru/': rulybka,
+    'https://cosmetic.magnit.ru/': magnit_cosmetic
 }
 
 def write_log(message, filename):
