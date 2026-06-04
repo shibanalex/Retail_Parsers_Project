@@ -121,10 +121,33 @@ def _extract_volume_weight(product_name):
             volume = f"{val} {unit}"
     return volume, weight
 
+def _extract_brand_from_name(product_name):
+    match = re.search(r'[A-Za-z][A-Za-z0-9\-\'& ]*[A-Za-z0-9]', product_name)
+    if match:
+        brand = match.group(0).strip()
+        if brand.lower() not in ['ml', 'g', 'kg', 'l', 'шт']:
+            return brand
+
+    cyrillic_brands = [
+        "чистая линия", "черный жемчуг", "рецепты бабушки агафьи", "бабушка агафья",
+        "сто рецептов красоты", "бархатные ручки", "свобода", "невская косметика",
+        "я самая", "натура сиберика", "красная линия", "лесной бальзам"
+    ]
+    
+    lower_name = product_name.lower()
+    for cb in cyrillic_brands:
+        if cb in lower_name:
+            return cb.title() 
+
+    return ""
+
 def process_product_json(item, retail_name, address, shop_name):
     try:
-        brand = "" 
         product_name = item.get("name", "")
+        
+        brand = item.get("brand", "")
+        if not brand:
+            brand = _extract_brand_from_name(product_name)
         
         product_id = item.get("productId") or item.get("id", "")
         full_url = f"https://cosmetic.magnit.ru/product/{product_id}/" if product_id else ""
@@ -152,7 +175,7 @@ def process_product_json(item, retail_name, address, shop_name):
         stock = item.get("quantity", 0)
 
         volume, weight = _extract_volume_weight(product_name)
-        gtin = item.get("id", "")
+        gtin = str(product_id)
 
         return {
             "Номер": 0,
