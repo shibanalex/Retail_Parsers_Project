@@ -61,8 +61,8 @@ def get_browser(parser_cfg_name=""):
     elif "x" in b_size:
         options.add_argument(f"--window-size={b_size.replace('x', ',')}")
 
-    profile_dir = os.path.join(base_dir, "rulybka_profile")
-    options.add_argument(f"--user-data-dir={profile_dir}")
+    # profile_dir = os.path.join(base_dir, "rulybka_profile")
+    # options.add_argument(f"--user-data-dir={profile_dir}")
 
     chrome_major = _get_chrome_major_version()
     driver = uc.Chrome(options=options, version_main=chrome_major or 148)

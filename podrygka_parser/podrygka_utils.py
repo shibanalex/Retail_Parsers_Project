@@ -1,6 +1,7 @@
 import time
 import random
 import re
+import urllib.parse
 from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -85,26 +86,41 @@ def set_city(driver, city_name, shop_name):
 def get_product_links(driver, query, shop_name):
     links = set()
     try:
-        search_inputs = WebDriverWait(driver, 10).until(
-            EC.presence_of_all_elements_located((By.XPATH, "//input[@id='search' or @name='search' or @type='search']"))
-        )
+        driver.get("https://www.podrygka.ru/")
+        smart_sleep(driver, 2.5)
         
-        visible_input = None
-        for inp in search_inputs:
-            if inp.is_displayed():
-                visible_input = inp
-                break
-                
-        if not visible_input:
-            visible_input = search_inputs[0]
+        check_and_bypass_waf(driver, shop_name)
+        
+        try:
+            search_inputs = WebDriverWait(driver, 5).until(
+                EC.presence_of_all_elements_located((By.XPATH, "//input[@id='search' or @name='search' or @type='search']"))
+            )
+            
+            visible_input = None
+            for inp in search_inputs:
+                if inp.is_displayed():
+                    visible_input = inp
+                    break
+                    
+            if not visible_input:
+                visible_input = search_inputs[0]
 
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", visible_input)
-        driver.execute_script("arguments[0].focus(); arguments[0].value = '';", visible_input)
-        visible_input.send_keys(query)
-        smart_sleep(driver, 1.0)
-        visible_input.send_keys(Keys.ENTER)
-        
-        smart_sleep(driver, 3.0)
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", visible_input)
+            driver.execute_script("arguments[0].focus(); arguments[0].value = '';", visible_input)
+            
+            visible_input.send_keys(" ")
+            visible_input.send_keys(Keys.BACKSPACE)
+            smart_sleep(driver, 0.5)
+            
+            visible_input.send_keys(query)
+            smart_sleep(driver, 1.5)
+            visible_input.send_keys(Keys.ENTER)
+            smart_sleep(driver, 4.0)
+            
+        except TimeoutException:
+            encoded_query = urllib.parse.quote(query)
+            driver.get(f"https://www.podrygka.ru/search/?q={encoded_query}")
+            smart_sleep(driver, 4.0)
         
         retries = 0       
         max_retries = 3   
@@ -136,7 +152,7 @@ def get_product_links(driver, query, shop_name):
             except Exception:
                 pass
                 
-            smart_sleep(driver, 1.5)
+            smart_sleep(driver, 2.0)
             
         print(f"[{shop_name}] Найдено уникальных ссылок: {len(links)}")
         
@@ -265,7 +281,7 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
                 "Номер": 0,
                 "Сеть": retail_name,
                 "Тип магазина": "Магазин",
-                "Адрес Торговой точки": city_name,
+                "Адрес Торговой точки": "Нет в наличии / Не указано",
                 "Бренд": brand,
                 "Название продукта": product_name,
                 "Цена": price_base,
