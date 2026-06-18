@@ -2,6 +2,8 @@
 import os
 import sys
 from datetime import datetime
+
+from verno_parser import verno
 sys.path.append(r'C:\Users\Fuad\AppData\Roaming\Python\Python313\site-packages')
 sys.path.insert(0, r'C:\Retail Parsers.OUT')
 
@@ -102,7 +104,8 @@ parsers_funcs = {
     # "https://goldapple.ru/": goldapple
     # "https://podrygka.ru/": podrygka    
     # 'https://rulybka.ru/': rulybka,
-    'https://cosmetic.magnit.ru/': magnit_cosmetic
+    # 'https://cosmetic.magnit.ru/': magnit_cosmetic,
+    "https://www.verno-info.ru/": verno
 }
 
 def write_log(message, filename):
