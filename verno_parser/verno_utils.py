@@ -2,12 +2,20 @@ import time
 import random
 import re
 import os
+import json
 import requests
 import urllib.parse
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+
+try:
+    import google.generativeai as genai
+except ImportError:
+    pass
+
+GEMINI_API_KEY = "AIzaSyBoD0ClB3JHWf3nFcD_AUTkXQY65ICcAU8"
 
 _cached_pdf_url = None
 _cached_catalog_products = None
@@ -83,7 +91,7 @@ def get_product_links(driver, query, shop_name):
     pdf_url = get_pdf_url(driver, shop_name)
     if pdf_url:
         encoded_query = urllib.parse.quote(query)
-        return [f"{pdf_url}#query={encoded_query}"]
+        return [f"{pdf_url}
     return []
 
 def download_pdf(driver, pdf_url, save_path, shop_name):
@@ -113,11 +121,98 @@ def download_pdf(driver, pdf_url, save_path, shop_name):
         print(f"[{shop_name}] Ошибка сети при скачивании PDF: {e}")
         return False
 
+def extract_products_with_ai(text, shop_name):
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "твой_ключ_gemini_здесь":
+        print(f"[{shop_name}] Ошибка: Не указан API ключ Google Gemini!")
+        return None
+
+    prompt = f"""Ты — точный экстрактор данных. Я передаю тебе сырой текст со страницы каталога супермаркета.
+Твоя задача — найти все товары и вернуть их строго в виде JSON-массива. 
+ВАЖНО: ВОЗВРАЩАЙ ТОЛЬКО МАССИВ [ ... ], БЕЗ КАВЫЧЕК MARKDOWN, БЕЗ СЛОВ "Вот результат" И Т.Д.
+Правила:
+1. Цены могут быть слипшимися (например "199 90" = 199.90, "15 99" = 15.99).
+2. Старая (зачеркнутая) цена обычно больше новой. Если цены две, бóльшая = price_base, меньшая = price_promo. Если цена одна = price_base.
+3. Игнорируй рекламный мусор, даты (19-22 июня), слова "выгода", "суперцена", "товары недели".
+4. Верни массив объектов в формате:
+[
+  {{
+    "name": "Название товара (например: МОЛОКО ДОМИК В ДЕРЕВНЕ)",
+    "price_base": 199.90,
+    "price_promo": 159.90,
+    "volume": "1 л" (или пустая строка ""),
+    "weight": "400 г" (или пустая строка "")
+  }}
+]
+Если товаров нет, верни [].
+
+Текст страницы:
+{text}
+"""
+
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('gemini-flash-latest')
+        
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.0,
+            )
+        )
+        
+        answer = response.text.strip()
+        
+        if "```json" in answer:
+            answer = answer.split("```json")[1].split("```")[0].strip()
+        elif "```" in answer:
+            answer = answer.split("```")[1].split("```")[0].strip()
+            
+        start_idx = answer.find('[')
+        end_idx = answer.rfind(']')
+        if start_idx != -1 and end_idx != -1:
+            answer = answer[start_idx:end_idx+1]
+            
+        products = json.loads(answer)
+        if isinstance(products, list):
+            return products
+            
+    except Exception as e:
+        print(f"[{shop_name}] Ошибка ИИ-парсинга Gemini: {e}")
+        
+    return None
+
+def extract_products_fallback(text):
+    results = []
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    
+    for i, line in enumerate(lines):
+        match = re.search(r'(\d+)\s*(99|90|50|00|95)\b', line)
+        if match:
+            rub = match.group(1)
+            kop = match.group(2)
+            try:
+                price = float(f"{rub}.{kop}")
+                if 9.0 <= price < 15000.0 and price not in [2022, 2023, 2024, 2025, 2026]:
+                    name = lines[i+1] if i+1 < len(lines) else "Товар из каталога"
+                    if len(name) < 3 or re.search(r'\d{1,2}\s*(июня|июля|августа|сентября|мая)', name, re.I):
+                        name = "Товар по акции"
+                        
+                    results.append({
+                        "name": name,
+                        "price_base": price,
+                        "price_promo": None,
+                        "volume": "",
+                        "weight": ""
+                    })
+            except:
+                pass
+    return results
+
 def parse_product(driver, product_url, retail_name, city_name, shop_name):
     global _cached_catalog_products
     results = []
     
-    hash_idx = product_url.find('#query=')
+    hash_idx = product_url.find('
     query = ""
     pdf_url = product_url
     if hash_idx != -1:
@@ -127,7 +222,7 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
     try:
         import pdfplumber
     except ImportError:
-        print(f"[{shop_name}] Ошибка. Установите библиотеку (pip install pdfplumber)")
+        print(f"[{shop_name}] Ошибка. Установите библиотеку (pip install pdfplumber google-generativeai)")
         return results
 
     if _cached_catalog_products is None:
@@ -136,165 +231,39 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
         
         if download_pdf(driver, pdf_url, pdf_path, shop_name):
             try:
-                print(f"[{shop_name}] Анализ сетки каталога из PDF (разовая операция)...")
+                print(f"[{shop_name}] Запуск ИИ-парсинга каталога через Google Gemini...")
                 with pdfplumber.open(pdf_path) as pdf:
                     for page_num, page in enumerate(pdf.pages, 1):
-                        raw_words = page.extract_words(keep_blank_chars=False)
-                        if not raw_words: continue
+                        text = page.extract_text(layout=True)
+                        if not text or len(text.strip()) < 20:
+                            continue
+                            
+                        print(f"[{shop_name}] ИИ обрабатывает страницу {page_num} из {len(pdf.pages)}...")
+                        ai_products = extract_products_with_ai(text, shop_name)
                         
-                        words = []
-                        for w in raw_words:
-                            txt = w['text'].strip()
-                            if not txt: continue
-                            w['text'] = txt
-                            w['cx'] = (w['x0'] + w['x1']) / 2
-                            w['cy'] = (w['top'] + w['bottom']) / 2
-                            w['height'] = w['bottom'] - w['top']
-                            w['used'] = False
-                            words.append(w)
-                            
-                        if not words: continue
-
-                        avg_height = sum(w['height'] for w in words) / len(words)
+                        if ai_products is None:
+                            print(f"[{shop_name}] Включение резервного регулярного парсера для страницы {page_num}...")
+                            ai_products = extract_products_fallback(text)
                         
-                        
-                        anchors = []
-                        for w in words:
-                            txt_clean = re.sub(r'[^\d]', '', w['text'])
-                            if not txt_clean: continue
-                            
-                            
-                            if w['height'] > avg_height * 1.2 and txt_clean.isdigit():
-                                price_val = float(txt_clean)
-                                
-                                
-                                if len(txt_clean) >= 3 and txt_clean[-2:] in ['99', '90', '50', '00']:
-                                    price_val = float(txt_clean[:-2] + '.' + txt_clean[-2:])
-                                elif price_val > 999: 
-                                    price_val = price_val / 100.0
-                                    
-                                if 9.0 <= price_val < 15000.0 and price_val not in [2022, 2023, 2024, 2025, 2026]:
-                                    anchors.append({'word': w, 'val': price_val, 'box_words': []})
-                                    w['used'] = True
-
-                        valid_anchors = []
-                        for a in anchors:
-                            is_dup = False
-                            for va in valid_anchors:
-                                if abs(a['word']['cx'] - va['word']['cx']) < 40 and abs(a['word']['cy'] - va['word']['cy']) < 20:
-                                    is_dup = True
-                                    break
-                            if not is_dup:
-                                valid_anchors.append(a)
-
-                        
-                        for a in valid_anchors:
-                            aw = a['word']
-                            for w in words:
-                                if w['used']: continue
-                                if w['text'].replace('%', '') in ['99', '90', '50', '00']:
-                                    if w['x0'] >= aw['x1'] - 5 and w['x0'] < aw['x1'] + 35 and abs(w['cy'] - aw['cy']) < 20:
-                                        if a['val'] == float(int(a['val'])):
-                                            a['val'] += float(w['text'].replace('%', '')) / 100.0
-                                        w['used'] = True
-                                        break
-
-                        
-                        stop_regex = re.compile(r'(период|июня|июля|августа|сентября|октября|ноября|декабря|января|февраля|марта|апреля|мая|товары\s+недели|по\s+карте|у\s+нас\s+всегда|низкие\s+цены|цена)', re.I)
-                        
-                        for w in words:
-                            if w['used']: continue
-                            txt = w['text']
-                            
-                            if stop_regex.search(txt) or txt.lower() in ['выгода', 'хит', 'суперцена', 'акция']:
-                                continue
-                                
-                            best_a = None
-                            min_dist = float('inf')
-                            
-                            for a in valid_anchors:
-                                aw = a['word']
-                                dx = abs(w['cx'] - aw['cx'])
-                                dy = w['cy'] - aw['cy'] 
-                                
-                                
-                                if dx < 90 and -80 < dy < 150:
-                                
-                                    dist = (dx * 3) ** 2 + (dy) ** 2
-                                    if dist < min_dist:
-                                        min_dist = dist
-                                        best_a = a
-                                        
-                            if best_a:
-                                best_a['box_words'].append(w)
-                                w['used'] = True
-                                    
-                        for a in valid_anchors:
-                            box_words = a['box_words']
-                            box_words.sort(key=lambda w: (round(w['cy'] / 5), w['cx']))
-                            
-                            name_parts = []
-                            volume = ""
-                            weight = ""
-                            old_prices = []
-                            
-                            for w in box_words:
-                                txt = w['text'].strip()
-                                txt_lower = txt.lower()
-                                
-                                if '%' in txt:
-                                    continue
-                                    
-                                if re.search(r'\d+[.,]?\d*\s*(г|кг)\b', txt_lower):
-                                    weight = txt
-                                    name_parts.append(txt)
-                                elif re.search(r'\d+[.,]?\d*\s*(мл|л)\b', txt_lower):
-                                    volume = txt
-                                    name_parts.append(txt)
-                                else:
-                                    clean_txt = re.sub(r'[^\d]', '', txt)
-                                    if clean_txt.isdigit() and len(clean_txt) >= 2:
-                                        if len(clean_txt) >= 3 and clean_txt[-2:] in ['99', '90', '50', '00']:
-                                            p_val = float(clean_txt[:-2] + '.' + clean_txt[-2:])
-                                        else:
-                                            p_val = float(clean_txt)
-                                            if p_val > 999: p_val = p_val / 100.0
-                                        
-                                        
-                                        if p_val >= a['val'] and w['cy'] < a['word']['cy'] + 10:
-                                            old_prices.append(p_val)
-                                            continue 
-                                            
-                                    name_parts.append(txt)
-
-                            clean_name_parts = []
-                            for part in name_parts:
-                                if re.match(r'^[\d.,]+$', part): continue
-                                clean_name_parts.append(part)
-                                
-                            name = " ".join(clean_name_parts).strip()
-                            if len(name) < 3:
-                                name = "Товар из каталога"
-
-                            promo_price = a['val']
-                            base_price = max(old_prices) if old_prices else promo_price
-
+                        for p in ai_products:
                             _cached_catalog_products.append({
                                 "Бренд": "",
-                                "Название продукта": name,
-                                "Цена": base_price,
-                                "Цена по акции": promo_price if promo_price < base_price else None,
-                                "Объем": volume,
-                                "Вес": weight,
+                                "Название продукта": p.get("name", "Товар из каталога"),
+                                "Цена": float(p.get("price_base") or 0.0),
+                                "Цена по акции": float(p.get("price_promo")) if p.get("price_promo") else None,
+                                "Объем": p.get("volume", ""),
+                                "Вес": p.get("weight", ""),
+                                "Страница": page_num
                             })
-
-                print(f"[{shop_name}] В кэш добавлено {len(_cached_catalog_products)} товаров из PDF.")
+                            
+                        time.sleep(3)
+                            
+                print(f"[{shop_name}] В кэш добавлено {len(_cached_catalog_products)} товаров.")
             except Exception as e:
                 print(f"[{shop_name}] Ошибка обработки PDF: {e}")
             finally:
                 if os.path.exists(pdf_path):
                     os.remove(pdf_path)
-
 
     query_words = query.lower().split()
     
@@ -313,13 +282,13 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
                 "Номер": 0,
                 "Сеть": retail_name,
                 "Тип магазина": "Магазин",
-                "Адрес Торговой точки": city_name,
+                "Адрес Торговой точки": city_name, 
                 "Бренд": p["Бренд"],
                 "Название продукта": p["Название продукта"],
                 "Цена": p["Цена"],
                 "Цена по акции": p["Цена по акции"],
                 "Фото товара": "",
-                "Ссылка на страницу": pdf_url,
+                "Ссылка на страницу": f"{pdf_url} (Стр. {p.get('Страница', 1)})",
                 "Рейтинг": None,
                 "Объем": p["Объем"],
                 "Вес": p["Вес"],

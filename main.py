@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime
 
-from verno_parser import verno
+
 sys.path.append(r'C:\Users\Fuad\AppData\Roaming\Python\Python313\site-packages')
 sys.path.insert(0, r'C:\Retail Parsers.OUT')
 
@@ -54,7 +54,8 @@ uc.Chrome.__del__ = _patched_del
 # from goldapple_parser import goldapple
 # from podrygka_parser import podrygka
 # from rulybka_parser import rulybka
-from magnit_cosmetic_parser import magnit_cosmetic
+# from magnit_cosmetic_parser import magnit_cosmetic
+from ozon_parser import ozon
 
 
 from parsers_core.utils import write_excel
@@ -105,7 +106,8 @@ parsers_funcs = {
     # "https://podrygka.ru/": podrygka    
     # 'https://rulybka.ru/': rulybka,
     # 'https://cosmetic.magnit.ru/': magnit_cosmetic,
-    "https://www.verno-info.ru/": verno
+    # "https://www.verno-info.ru/": verno,
+    'https://www.ozon.ru/': ozon
 }
 
 def write_log(message, filename):
