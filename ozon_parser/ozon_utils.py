@@ -4,6 +4,10 @@ import re
 import urllib.parse
 from bs4 import BeautifulSoup
 
+
+#Переменная количества
+MAX_PRODUCTS_PER_QUERY = 30  
+
 def smart_sleep(driver, fallback=2.0):
     if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
         time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
@@ -18,7 +22,7 @@ def check_and_bypass_waf(driver, shop_name):
             html = page.html.lower()
             
             if "just a moment" in title or "checking" in html or "cloudflare" in title or "qrator" in title:
-                print(f"[{shop_name}] Антибот активен. Ожидание...")
+                print(f"[{shop_name}] Антибот активен.")
                 time.sleep(5)
                 
                 try:
@@ -92,10 +96,10 @@ def get_product_links(driver, query, shop_name):
                         clean_url = f"https://www.ozon.ru{clean_url}"
                     links.add(clean_url)
                     
-                    if len(links) >= 100:
+                    if len(links) >= MAX_PRODUCTS_PER_QUERY:
                         break
                         
-            if len(links) >= 100:
+            if len(links) >= MAX_PRODUCTS_PER_QUERY:
                 break
                     
             if len(links) > links_count_before:
@@ -113,12 +117,12 @@ def get_product_links(driver, query, shop_name):
                 
             smart_sleep(driver, 2.0)
             
-        print(f"[{shop_name}] Найдено уникальных ссылок: {len(links)}")
+        print(f"[{shop_name}] Найдено ссылок для сбора: {len(links)}")
         
     except Exception as e:
         print(f"[{shop_name}] Ошибка при поиске '{query}'.")
         
-    return list(links)
+    return list(links)[:MAX_PRODUCTS_PER_QUERY]
 
 def clean_price(price_str):
     if not price_str: return 0.0
@@ -149,7 +153,7 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
             pass
             
         try:
-            page.scroll.down(1500)
+            page.scroll.down(1200)
             smart_sleep(driver, 1.5)
         except:
             pass
@@ -249,14 +253,26 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
                     pass
 
         stock_int = 1
-        if soup.find(string=re.compile(r'Нет в наличии|Товар закончился', re.I)):
+        
+        full_text = soup.get_text(separator=" ", strip=True).lower()
+        
+        if re.search(r'нет в наличии|товар закончился', full_text):
             stock_int = 0
+        else:
+            stock_match = re.search(r'(\d[\d\s\xa0\u2009]*?)\s*(?:шт\.?|единиц[а-я]?)\s*осталось', full_text)
+            if stock_match:
+                try:
+                    num_str = re.sub(r'\D', '', stock_match.group(1))
+                    if num_str:
+                        stock_int = int(num_str)
+                except:
+                    pass
 
         results.append({
             "Номер": 0,
             "Сеть": retail_name,
             "Тип магазина": "Маркетплейс",
-            "Адрес Торговой точки": f"{city_name}",
+            "Адрес Торговой точки": f"{city_name} (Интернет-магазин / Доставка)",
             "Бренд": brand,
             "Название продукта": product_name,
             "Цена": price_base,
