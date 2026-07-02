@@ -55,7 +55,8 @@ uc.Chrome.__del__ = _patched_del
 # from podrygka_parser import podrygka
 # from rulybka_parser import rulybka
 # from magnit_cosmetic_parser import magnit_cosmetic
-from ozon_parser import ozon
+# from ozon_parser import ozon
+from samokat_parser import samokat
 
 
 from parsers_core.utils import write_excel
@@ -107,7 +108,8 @@ parsers_funcs = {
     # 'https://rulybka.ru/': rulybka,
     # 'https://cosmetic.magnit.ru/': magnit_cosmetic,
     # "https://www.verno-info.ru/": verno,
-    'https://www.ozon.ru/': ozon
+    # 'https://www.ozon.ru/': ozon
+    'https://samokat.ru/': samokat
 }
 
 def write_log(message, filename):
