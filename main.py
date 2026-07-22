@@ -3,6 +3,8 @@ import os
 import sys
 from datetime import datetime
 
+from wildberries_parser import wildberries
+
 
 sys.path.append(r'C:\Users\Fuad\AppData\Roaming\Python\Python313\site-packages')
 sys.path.insert(0, r'C:\Retail Parsers.OUT')
@@ -110,7 +112,8 @@ parsers_funcs = {
     # "https://www.verno-info.ru/": verno,
     # 'https://www.ozon.ru/': ozon,
     # 'https://samokat.ru/': samokat,
-    'https://utkonos.ru/': utkonos
+    # 'https://utkonos.ru/': utkonos,
+    'www.wildberries.ru': wildberries,
 }
 
 def write_log(message, filename):
