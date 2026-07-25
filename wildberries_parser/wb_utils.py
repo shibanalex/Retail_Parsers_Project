@@ -4,9 +4,10 @@ import re
 import urllib.parse
 
 
-MAX_PRODUCTS_PER_QUERY = 30
-_cached_catalog_products = {}
+MAX_PRODUCTS_PER_QUERY = 100 
 
+
+_cached_catalog_products = {}
 
 WB_CITY_DEST = {
     "москва": "-1257786",
@@ -24,16 +25,31 @@ def smart_sleep(driver, fallback=2.0):
         time.sleep(fallback)
 
 def check_and_bypass_waf(driver, shop_name):
-    
     return True
+
+def safe_get(session, url, shop_name, max_retries=3):
+    """Безопасный запрос с обработкой ошибки 429 (Too Many Requests)"""
+    delay = 3.0
+    for attempt in range(max_retries):
+        try:
+            resp = session.get(url, timeout=10)
+            if resp.status_code == 200:
+                return resp
+            elif resp.status_code == 429:
+                print(f"[{shop_name}] Ошибка 429. Авто-пауза {delay} сек. перед повтором...")
+                time.sleep(delay)
+                delay *= 2.0  
+            else:
+                break
+        except Exception:
+            time.sleep(1.5)
+    return None
 
 def set_city(driver, city_name, shop_name):
     global _cached_catalog_products
     _cached_catalog_products = {}
     
     city_lower = city_name.lower().strip()
-    
-    
     driver.dest = WB_CITY_DEST.get(city_lower, "-1257786")
     return 200
 
@@ -62,6 +78,23 @@ def get_wb_basket_number(vol):
     if 3486 <= vol <= 3701: return '21'
     return '22'
 
+def extract_volume_weight_from_name(name):
+    """Резервное извлечение объема и веса из названия товара"""
+    weight, volume = "", ""
+    txt_lower = name.lower()
+    
+    
+    w_m = re.search(r'(\d+[.,]?\d*)\s*(г|кг)\b', txt_lower)
+    if w_m:
+        weight = w_m.group(0)
+        
+    
+    v_m = re.search(r'(\d+[.,]?\d*)\s*(мл|л)\b', txt_lower)
+    if v_m:
+        volume = v_m.group(0)
+        
+    return volume, weight
+
 def get_product_links(driver, query, shop_name):
     global _cached_catalog_products
     session = driver.session
@@ -70,86 +103,85 @@ def get_product_links(driver, query, shop_name):
     encoded_query = urllib.parse.quote(query)
     dest = getattr(driver, "dest", "-1257786")
     
-    search_url = (
-        f"https://search.wb.ru/exactmatch/ru/common/v18/search"
-        f"?appType=1&curr=rub&dest={dest}&lang=ru&page=1"
-        f"&query={encoded_query}&resultset=catalog&sort=popular&spp=30"
-    )
+    page_num = 1
     
-    try:
-        resp = session.get(search_url)
-        if resp.status_code != 200:
-            print(f"[{shop_name}] Ошибка получения ответа API: {resp.status_code}")
-            return []
-            
-        data = resp.json()
+    while len(links) < MAX_PRODUCTS_PER_QUERY:
+        search_url = (
+            f"https://search.wb.ru/exactmatch/ru/common/v18/search"
+            f"?appType=1&curr=rub&dest={dest}&lang=ru&page={page_num}"
+            f"&query={encoded_query}&resultset=catalog&sort=popular&spp=30"
+        )
         
-        
-        products = data.get("data", {}).get("products", [])
-        if not products:
-            products = data.get("products", [])
+        resp = safe_get(session, search_url, shop_name)
+        if not resp:
+            print(f"[{shop_name}] Прерывание сбора на стр. {page_num}.")
+            break
             
-        for p in products:
-            item_id = p.get("id")
-            if not item_id:
-                continue
+        try:
+            data = resp.json()
+            products = data.get("data", {}).get("products", [])
+            if not products:
+                products = data.get("products", [])
                 
-            item_id = int(item_id)
-            url = f"https://www.wildberries.ru/catalog/{item_id}/detail.aspx"
-            name = p.get("name", "Неизвестный товар")
-            brand = p.get("brand", "")
-            
-            
-            price_base = 0.0
-            price_promo = None
-            sizes = p.get("sizes", [])
-            if sizes:
-                price_data = sizes[0].get("price", {})
-                b_price = price_data.get("basic", 0) / 100.0
-                p_price = price_data.get("product", 0) / 100.0
-                
-                if b_price > 0:
-                    price_base = b_price
-                    if p_price > 0 and p_price < b_price:
-                        price_promo = p_price
-                    else:
-                        price_base = p_price if p_price > 0 else b_price
-            
-            rating = p.get("reviewRating") or p.get("rating", 0)
-            rating = float(rating) if rating else None
-            
-            stock_int = p.get("totalQuantity", 1)
-            
-            
-            _cached_catalog_products[url] = {
-                "id": item_id,
-                "name": name,
-                "brand": brand,
-                "price_base": price_base,
-                "price_promo": price_promo,
-                "rating": rating,
-                "stock": stock_int
-            }
-            
-            links.append(url)
-            if len(links) >= MAX_PRODUCTS_PER_QUERY:
+            if not products:
                 break
                 
-        print(f"[{shop_name}] Найдено {len(links)} карточек.")
-        smart_sleep(driver, 1.5)
-        return links
-
-    except Exception as e:
-        print(f"[{shop_name}] Ошибка API поиска '{query}': {e}")
-        return []
-
-def clean_price(price_str):
-    if not price_str: return 0.0
-    cleaned = re.sub(r'[^\d.,]', '', str(price_str).replace(',', '.'))
-    try:
-        return float(cleaned.rstrip('.'))
-    except:
-        return 0.0
+            for p in products:
+                item_id = p.get("id")
+                if not item_id:
+                    continue
+                    
+                item_id = int(item_id)
+                url = f"https://www.wildberries.ru/catalog/{item_id}/detail.aspx"
+                
+                if url in _cached_catalog_products:
+                    continue
+                    
+                name = p.get("name", "Неизвестный товар")
+                brand = p.get("brand", "")
+                
+                price_base = 0.0
+                price_promo = None
+                sizes = p.get("sizes", [])
+                if sizes:
+                    price_data = sizes[0].get("price", {})
+                    b_price = price_data.get("basic", 0) / 100.0
+                    p_price = price_data.get("product", 0) / 100.0
+                    
+                    if b_price > 0:
+                        price_base = b_price
+                        if p_price > 0 and p_price < b_price:
+                            price_promo = p_price
+                        else:
+                            price_base = p_price if p_price > 0 else b_price
+                
+                rating = p.get("reviewRating") or p.get("rating", 0)
+                rating = float(rating) if rating else None
+                stock_int = p.get("totalQuantity", 1)
+                
+                _cached_catalog_products[url] = {
+                    "id": item_id,
+                    "name": name,
+                    "brand": brand,
+                    "price_base": price_base,
+                    "price_promo": price_promo,
+                    "rating": rating,
+                    "stock": stock_int
+                }
+                
+                links.append(url)
+                if len(links) >= MAX_PRODUCTS_PER_QUERY:
+                    break
+                    
+            page_num += 1
+            smart_sleep(driver, 1.5) 
+            
+        except Exception as e:
+            print(f"[{shop_name}] Ошибка при обработке JSON поиска '{query}': {e}")
+            break
+            
+    print(f"[{shop_name}] Найдено {len(links)} карточек товаров.")
+    return links
 
 def parse_product(driver, product_url, retail_name, city_name, shop_name):
     global _cached_catalog_products
@@ -166,7 +198,6 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
     part = item_id // 1000
     basket = get_wb_basket_number(vol)
     
-    
     photo_url = f"https://basket-{basket}.wbbasket.ru/vol{vol}/part{part}/{item_id}/images/big/1.jpg"
     info_url = f"https://basket-{basket}.wbbasket.ru/vol{vol}/part{part}/{item_id}/info/ru/info.json"
     
@@ -175,30 +206,36 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
     gtin = ""
     
     
-    try:
-        resp = session.get(info_url)
-        if resp.status_code == 200:
+    resp = safe_get(session, info_url, shop_name, max_retries=2)
+    if resp:
+        try:
             info_data = resp.json()
             options = info_data.get("options", [])
             for opt in options:
                 name_attr = opt.get("name", "").lower()
-                val_attr = opt.get("value", "")
+                val_attr = str(opt.get("value", ""))
                 
-                if "вес" in name_attr and not "вес с упаковкой" in name_attr:
+                if "вес" in name_attr and not "с упаковкой" in name_attr:
                     weight = val_attr
                 elif "объем" in name_attr or "объём" in name_attr:
                     volume = val_attr
                 elif "штрихкод" in name_attr or "gtin" in name_attr or "barcode" in name_attr:
                     gtin = val_attr
             
-            
             if not weight:
                 for opt in options:
                     if "вес" in opt.get("name", "").lower():
-                        weight = opt.get("value", "")
+                        weight = str(opt.get("value", ""))
                         break
-    except Exception:
-        pass
+        except Exception:
+            pass
+
+    
+    fallback_vol, fallback_wt = extract_volume_weight_from_name(c["name"])
+    if not volume:
+        volume = fallback_vol
+    if not weight:
+        weight = fallback_wt
 
     results.append({
         "Номер": 0,
