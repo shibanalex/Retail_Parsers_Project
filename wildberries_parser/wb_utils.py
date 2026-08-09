@@ -54,7 +54,6 @@ def set_city(driver, city_name, shop_name):
     return 200
 
 def get_wb_basket_number(vol):
-    """Определяет кластер сервера хранения фото и характеристик WB по номеру артикула"""
     if 0 <= vol <= 143: return '01'
     if 144 <= vol <= 287: return '02'
     if 288 <= vol <= 431: return '03'
