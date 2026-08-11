@@ -12,56 +12,82 @@ def smart_sleep(driver, fallback=2.0):
         time.sleep(fallback)
 
 def check_and_bypass_waf(driver, shop_name):
-    
     return True
 
 def set_city(driver, city_name, shop_name):
     global _cached_catalog_products
     _cached_catalog_products = {}
     session = driver.session
-    city_lower = city_name.lower().strip()
     
+    city_lower = city_name.lower().strip()
     url = "https://backend-v2.shop.gulliver-ul.ru/api/v1.1/customer/graph?platform=web&dt=web&av=4.1.0"
     
+    
+    graphql_query = """
+    query getTopology {
+      topology {
+        countries {
+          regions {
+            cities {
+              name
+              defaultShop {
+                id
+                address
+              }
+            }
+          }
+        }
+      }
+    }
+    """
     
     payload = {
         "operationName": "getTopology",
         "variables": {},
-        "query": "query getTopology {\n  topology {\n    countries {\n      regions {\n        cities {\n          name\n          defaultShop {\n            id\n          }\n        }\n      }\n    }\n  }\n}"
+        "query": graphql_query
     }
-
+    
     try:
         resp = session.post(url, json=payload, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            countries = data.get("data", {}).get("topology", {}).get("countries", [])
-            
-            
-            for country in countries:
-                for region in country.get("regions", []):
-                    for city in region.get("cities", []):
-                        current_city_name = city.get("name", "").lower().strip()
-                        
-                        
-                        if current_city_name == city_lower or city_lower in current_city_name:
-                            shop_id = city.get("defaultShop", {}).get("id")
-                            if shop_id:
-                                driver.shop_id = str(shop_id)
-                                print(f"[{shop_name}] Город '{city.get('name')}' успешно определен (shop_id: {shop_id}).")
-                                return 200
-                                
-            print(f"[{shop_name}] Ошибка 999. Город '{city_name}' не найден в зоне доставки Гулливер.")
-            return 999
-        else:
-            print(f"[{shop_name}] Ошибка получения списка городов (HTTP {resp.status_code}).")
+        if resp.status_code != 200:
+            print(f"[{shop_name}] Ошибка API (HTTP {resp.status_code}) при запросе топологии.")
             return 500
+            
+        data = resp.json()
+        countries = data.get("data", {}).get("topology", {}).get("countries", [])
+        
+        
+        for country in countries:
+            regions = country.get("regions", [])
+            for region in regions:
+                cities = region.get("cities", [])
+                for city in cities:
+                    c_name = city.get("name", "")
+                    if c_name and city_lower in c_name.lower():
+                        shop_info = city.get("defaultShop", {})
+                        shop_id = shop_info.get("id")
+                        
+                        if shop_id:
+                            driver.shop_id = str(shop_id)
+                            
+                            driver.shop_address = re.sub(r'\s+', ' ', shop_info.get("address", city_name)).strip()
+                            
+                            print(f"[{shop_name}] Город {c_name} найден. Привязан shop_id = {shop_id}, Адрес: {driver.shop_address}")
+                            return 200
+                            
+        
+        return 999
+        
     except Exception as e:
-        print(f"[{shop_name}] Ошибка API при поиске города: {e}")
+        print(f"[{shop_name}] Ошибка загрузки топологии городов: {e}")
         return 500
 
 def extract_volume_weight(name, pkg):
     weight, volume = "", ""
-    txt_lower = f"{name} {pkg}".lower()
+    name_str = str(name) if name else ""
+    pkg_str = str(pkg) if pkg else ""
+    
+    txt_lower = f"{name_str} {pkg_str}".lower()
     
     w_match = re.search(r'(\d+[.,]?\d*)\s*(г|кг)\b', txt_lower)
     if w_match: weight = w_match.group(0)
@@ -76,13 +102,10 @@ def get_product_links(driver, query, shop_name):
     session = driver.session
     links = []
     
-    
-    shop_id = getattr(driver, 'shop_id', "7")
-    
     url = "https://backend-v2.shop.gulliver-ul.ru/api/v1.1/customer/graph?platform=web&dt=web&av=4.1.0"
     
     page = 1
-    limit = 20 
+    limit = 20
     
     graphql_query = """
     query searchProducts($shop_id: ID!, $searchQuery: SearchQuery!, $filter: NestedFilterInput, $style: String, $page: Int, $limit: Int) {
@@ -124,7 +147,7 @@ def get_product_links(driver, query, shop_name):
             payload = {
                 "operationName": "searchProducts",
                 "variables": {
-                    "shop_id": shop_id,
+                    "shop_id": getattr(driver, 'shop_id', "7"),
                     "page": page,
                     "limit": limit,
                     "searchQuery": {
@@ -140,13 +163,15 @@ def get_product_links(driver, query, shop_name):
 
             resp = session.post(url, json=payload, timeout=15)
             if resp.status_code != 200:
-                print(f"[{shop_name}] Ошибка API поиска (HTTP {resp.status_code}) на странице {page}.")
+                print(f"[{shop_name}] Ошибка API (HTTP {resp.status_code}) на странице {page}.")
                 break
                 
             data = resp.json()
             search_data = data.get("data", {}).get("searchProducts", {})
+            if not search_data:
+                break
+                
             edges = search_data.get("edges", [])
-            
             if not edges:
                 break
                 
@@ -157,21 +182,20 @@ def get_product_links(driver, query, shop_name):
                 prod_url = f"https://gulliver-ul.ru/product/{slug}"
                 name = item.get("name", "Неизвестный товар")
                 
-                brand = item.get("brand", {})
-                brand_name = brand.get("name", "") if brand else ""
+                brand = item.get("brand") or {}
+                brand_name = brand.get("name", "")
                 
-                stock_data = item.get("stock", {})
-                stock_amount = stock_data.get("amount", 0) if stock_data else 0
-                
+                stock_data = item.get("stock") or {}
+                stock_amount = stock_data.get("amount", 0)
                 
                 price_base = 0.0
                 price_promo = None
-                offers = item.get("priceOffers", [])
+                offers = item.get("priceOffers") or []
                 
                 if offers:
                     offer = offers[0]
-                    p_current = float(offer.get("price", 0) or 0)
-                    p_old = float(offer.get("oldPrice", 0) or 0)
+                    p_current = float(offer.get("price") or 0)
+                    p_old = float(offer.get("oldPrice") or 0)
                     
                     if p_old > p_current:
                         price_base = p_old
@@ -180,7 +204,7 @@ def get_product_links(driver, query, shop_name):
                         price_base = p_current
                         
                 photo = ""
-                preview = item.get("preview", {})
+                preview = item.get("preview") or {}
                 if preview:
                     photo = preview.get("url", "")
                     
@@ -188,8 +212,8 @@ def get_product_links(driver, query, shop_name):
                 rating = float(rating) if rating else None
                 
                 gtin = item.get("xid", "")
-                
                 pkg = item.get("pkg", "")
+                
                 volume, weight = extract_volume_weight(name, pkg)
                 
                 _cached_catalog_products[prod_url] = {
@@ -209,8 +233,7 @@ def get_product_links(driver, query, shop_name):
                 if len(links) >= MAX_PRODUCTS_PER_QUERY:
                     break
             
-            
-            page_info = search_data.get("pageInfo", {})
+            page_info = search_data.get("pageInfo") or {}
             current_page = page_info.get("page", page)
             last_page = page_info.get("lastPage", page)
             
@@ -230,14 +253,16 @@ def get_product_links(driver, query, shop_name):
 def parse_product(driver, product_url, retail_name, city_name, shop_name):
     global _cached_catalog_products
     
-    
     if product_url in _cached_catalog_products:
         c = _cached_catalog_products[product_url]
+        
+        shop_address = getattr(driver, 'shop_address', f"{city_name} (Онлайн-каталог)")
+        
         return [{
             "Номер": 0,
             "Сеть": retail_name,
             "Тип магазина": "Магазин",
-            "Адрес Торговой точки": f"{city_name} (Интернет-магазин / Доставка)",
+            "Адрес Торговой точки": shop_address,
             "Бренд": c["Бренд"], 
             "Название продукта": c["Название продукта"],
             "Цена": c["Цена"],

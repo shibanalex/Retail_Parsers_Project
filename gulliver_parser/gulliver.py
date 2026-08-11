@@ -14,12 +14,12 @@ def get_all_data(shop_name):
 
     try:
         for actual_city_name in cities:
-            print(f"[{shop_name}] Установка города доставки: {actual_city_name}")
+            print(f"[{shop_name}] Инициализация API сессии для города: {actual_city_name}")
             
             status_code = set_city(driver, actual_city_name, shop_name)
             
             if status_code == 999:
-                print(f"[{shop_name}] Ошибка 999. Город не найден на сайте.")
+                print(f"[{shop_name}] Ошибка 999. Город не найден в топологии Гулливера.")
                 continue
             elif status_code in (403, 404, 500):
                 print(f"[{shop_name}] Ошибка {status_code}. Проблема с доступом к API.")
