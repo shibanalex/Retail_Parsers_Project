@@ -2,6 +2,7 @@ import time
 import random
 import re
 
+
 MAX_PRODUCTS_PER_QUERY = 100
 _cached_catalog_products = {}
 
@@ -24,62 +25,57 @@ def set_city(driver, city_name, shop_name):
     
     
     graphql_query = """
-    query getTopology {
-      topology {
-        countries {
-          regions {
-            cities {
-              name
-              defaultShop {
-                id
-                address
-              }
-            }
-          }
-        }
+    query shopsInGeoPolygon($corners: [GeoPointInput]!, $useZone: Boolean, $style: String, $shopImageStyle: String, $iconStyle: String, $customerType: String) {
+      shopsInGeoPolygon(corners: $corners, useZone: $useZone, customerType: $customerType) {
+        id
+        name
+        address
+        status
       }
     }
     """
     
     payload = {
-        "operationName": "getTopology",
-        "variables": {},
+        "operationName": "shopsInGeoPolygon",
+        "variables": {
+            "corners": [
+                {"latitude": -90, "longitude": -180},
+                {"latitude": -90, "longitude": 180},
+                {"latitude": 90, "longitude": 180},
+                {"latitude": 90, "longitude": -180}
+            ]
+        },
         "query": graphql_query
     }
     
     try:
         resp = session.post(url, json=payload, timeout=10)
         if resp.status_code != 200:
-            print(f"[{shop_name}] Ошибка API (HTTP {resp.status_code}) при запросе топологии.")
+            print(f"[{shop_name}] Ошибка API (HTTP {resp.status_code}) при запросе всех магазинов.")
             return 500
             
         data = resp.json()
-        countries = data.get("data", {}).get("topology", {}).get("countries", [])
+        shops = data.get("data", {}).get("shopsInGeoPolygon", [])
         
         
-        for country in countries:
-            regions = country.get("regions", [])
-            for region in regions:
-                cities = region.get("cities", [])
-                for city in cities:
-                    c_name = city.get("name", "")
-                    if c_name and city_lower in c_name.lower():
-                        shop_info = city.get("defaultShop", {})
-                        shop_id = shop_info.get("id")
-                        
-                        if shop_id:
-                            driver.shop_id = str(shop_id)
-                            
-                            driver.shop_address = re.sub(r'\s+', ' ', shop_info.get("address", city_name)).strip()
-                            
-                            print(f"[{shop_name}] Город {c_name} найден. Привязан shop_id = {shop_id}, Адрес: {driver.shop_address}")
-                            return 200
-                            
-        
-        return 999
+        driver.city_shops = []
+        for shop in shops:
+            addr = shop.get("address", "")
+            if city_lower in addr.lower():
+                driver.city_shops.append({
+                    "id": str(shop.get("id")),
+                    "address": re.sub(r'\s+', ' ', addr).strip() 
+                })
+                
+        if not driver.city_shops:
+            print(f"[{shop_name}] Магазины для города {city_name} не найдены.")
+            return 999
+            
+        print(f"[{shop_name}] Город {city_name} установлен. Найдено {len(driver.city_shops)} магазинов сети.")
+        return 200
         
     except Exception as e:
-        print(f"[{shop_name}] Ошибка загрузки топологии городов: {e}")
+        print(f"[{shop_name}] Ошибка загрузки топологии магазинов: {e}")
         return 500
 
 def extract_volume_weight(name, pkg):
@@ -100,12 +96,9 @@ def extract_volume_weight(name, pkg):
 def get_product_links(driver, query, shop_name):
     global _cached_catalog_products
     session = driver.session
-    links = []
+    links = set()
     
     url = "https://backend-v2.shop.gulliver-ul.ru/api/v1.1/customer/graph?platform=web&dt=web&av=4.1.0"
-    
-    page = 1
-    limit = 20
     
     graphql_query = """
     query searchProducts($shop_id: ID!, $searchQuery: SearchQuery!, $filter: NestedFilterInput, $style: String, $page: Int, $limit: Int) {
@@ -134,22 +127,22 @@ def get_product_links(driver, query, shop_name):
             oldPrice
           }
         }
-        pageInfo {
-          page
-          lastPage
-        }
       }
     }
     """
 
     try:
-        while len(links) < MAX_PRODUCTS_PER_QUERY:
+        
+        for shop in getattr(driver, 'city_shops', []):
+            shop_id = shop["id"]
+            shop_addr = shop["address"]
+            
             payload = {
                 "operationName": "searchProducts",
                 "variables": {
-                    "shop_id": getattr(driver, 'shop_id', "7"),
-                    "page": page,
-                    "limit": limit,
+                    "shop_id": shop_id,
+                    "page": 1,
+                    "limit": MAX_PRODUCTS_PER_QUERY,
                     "searchQuery": {
                         "search": query,
                         "filters": {}
@@ -163,18 +156,15 @@ def get_product_links(driver, query, shop_name):
 
             resp = session.post(url, json=payload, timeout=15)
             if resp.status_code != 200:
-                print(f"[{shop_name}] Ошибка API (HTTP {resp.status_code}) на странице {page}.")
-                break
+                continue
                 
             data = resp.json()
             search_data = data.get("data", {}).get("searchProducts", {})
             if not search_data:
-                break
+                continue
                 
             edges = search_data.get("edges", [])
-            if not edges:
-                break
-                
+            
             for item in edges:
                 slug = item.get("slug")
                 if not slug: continue
@@ -216,7 +206,13 @@ def get_product_links(driver, query, shop_name):
                 
                 volume, weight = extract_volume_weight(name, pkg)
                 
-                _cached_catalog_products[prod_url] = {
+                links.add(prod_url)
+                
+                
+                if prod_url not in _cached_catalog_products:
+                    _cached_catalog_products[prod_url] = {}
+                    
+                _cached_catalog_products[prod_url][shop_id] = {
                     "Название продукта": name,
                     "Цена": price_base,
                     "Цена по акции": price_promo,
@@ -226,25 +222,14 @@ def get_product_links(driver, query, shop_name):
                     "Бренд": brand_name,
                     "GTIN": gtin,
                     "Объем": volume,
-                    "Вес": weight
+                    "Вес": weight,
+                    "Адрес Торговой точки": shop_addr
                 }
                 
-                links.append(prod_url)
-                if len(links) >= MAX_PRODUCTS_PER_QUERY:
-                    break
-            
-            page_info = search_data.get("pageInfo") or {}
-            current_page = page_info.get("page", page)
-            last_page = page_info.get("lastPage", page)
-            
-            if current_page >= last_page:
-                break
-                
-            page += 1
-            smart_sleep(driver, 1.5)
+            smart_sleep(driver, 0.5)
 
-        print(f"[{shop_name}] Найдено {len(links)} товаров через GraphQL API.")
-        return links
+        print(f"[{shop_name}] Найдено {len(links)} уникальных товаров.")
+        return list(links)
         
     except Exception as e:
         print(f"[{shop_name}] Ошибка API поиска '{query}': {e}")
@@ -252,28 +237,29 @@ def get_product_links(driver, query, shop_name):
 
 def parse_product(driver, product_url, retail_name, city_name, shop_name):
     global _cached_catalog_products
+    results = []
     
     if product_url in _cached_catalog_products:
-        c = _cached_catalog_products[product_url]
+        shop_data_map = _cached_catalog_products[product_url]
         
-        shop_address = getattr(driver, 'shop_address', f"{city_name} (Онлайн-каталог)")
         
-        return [{
-            "Номер": 0,
-            "Сеть": retail_name,
-            "Тип магазина": "Магазин",
-            "Адрес Торговой точки": shop_address,
-            "Бренд": c["Бренд"], 
-            "Название продукта": c["Название продукта"],
-            "Цена": c["Цена"],
-            "Цена по акции": c["Цена по акции"],
-            "Фото товара": c["Фото товара"],
-            "Ссылка на страницу": product_url,
-            "Рейтинг": c["Рейтинг"],
-            "Объем": c["Объем"],
-            "Вес": c["Вес"],
-            "Остаток": c["Остаток"],
-            "GTIN": c["GTIN"]
-        }]
-        
-    return []
+        for shop_id, c in shop_data_map.items():
+            results.append({
+                "Номер": 0,
+                "Сеть": retail_name,
+                "Тип магазина": "Магазин",
+                "Адрес Торговой точки": c["Адрес Торговой точки"],
+                "Бренд": c["Бренд"], 
+                "Название продукта": c["Название продукта"],
+                "Цена": c["Цена"],
+                "Цена по акции": c["Цена по акции"],
+                "Фото товара": c["Фото товара"],
+                "Ссылка на страницу": product_url,
+                "Рейтинг": c["Рейтинг"],
+                "Объем": c["Объем"],
+                "Вес": c["Вес"],
+                "Остаток": c["Остаток"],
+                "GTIN": c["GTIN"]
+            })
+            
+    return results
