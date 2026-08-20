@@ -1,8 +1,16 @@
 import time
 import random
 import re
+import sys
+import os
 
-MAX_PRODUCTS_PER_QUERY = 25
+try:
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    import config
+except ImportError:
+    config = None
+
+MAX_PRODUCTS_PER_QUERY = 10
 _cached_catalog_products = {}
 
 
@@ -25,7 +33,6 @@ def set_city(driver, city_name, shop_name):
     
     city_lower = city_name.lower().strip()
     url = "https://backend-v2.shop.gulliver-ul.ru/api/v1.1/customer/graph?platform=web&dt=web&av=4.1.0"
-    
     
     
     graphql_query_shops = """
@@ -65,7 +72,6 @@ def set_city(driver, city_name, shop_name):
         for shop in shops:
             address = shop.get("address", "")
             status = shop.get("status", 0)
-            
             
             if status == 1 and city_lower in address.lower():
                 _current_city_shops.append({
@@ -141,6 +147,11 @@ def get_product_links(driver, query, shop_name):
     """
 
     
+    valid_brands = []
+    if config and hasattr(config, 'brand'):
+        valid_brands = [str(b).strip().lower() for b in config.brand if str(b).strip()]
+
+    
     for shop in _current_city_shops:
         shop_id = shop["id"]
         shop_address = shop["address"]
@@ -158,7 +169,6 @@ def get_product_links(driver, query, shop_name):
                         "page": page,
                         "limit": limit,
                         "searchQuery": {
-                            
                             "search": query, 
                             "filters": {}
                         },
@@ -192,6 +202,21 @@ def get_product_links(driver, query, shop_name):
                     brand = item.get("brand") or {}
                     brand_name = brand.get("name", "")
                     
+                    
+                    
+                    
+                    
+                    
+                    if valid_brands:
+                        matched = False
+                        for vb in valid_brands:
+                            if vb in brand_name.lower():
+                                matched = True
+                                break
+                        
+                        if not matched:
+                            continue
+                    
                     stock_data = item.get("stock") or {}
                     stock_amount = stock_data.get("amount", 0)
                     
@@ -222,7 +247,6 @@ def get_product_links(driver, query, shop_name):
                     pkg = item.get("pkg", "")
                     
                     volume, weight = extract_volume_weight(name, pkg)
-                    
                     
                     
                     cache_key = f"{prod_url}:::{shop_id}"
@@ -262,7 +286,7 @@ def get_product_links(driver, query, shop_name):
         except Exception as e:
             print(f"[{shop_name}] Ошибка API поиска по магазину {shop_address}: {e}")
 
-    print(f"[{shop_name}] Суммарно по всем магазинам найдено {len(links)} позиций.")
+    print(f"[{shop_name}] Суммарно по всем магазинам найдено {len(links)} релевантных позиций.")
     return links
 
 def parse_product(driver, product_url, retail_name, city_name, shop_name):
