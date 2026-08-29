@@ -60,7 +60,8 @@ uc.Chrome.__del__ = _patched_del
 # from ozon_parser import ozon
 # from samokat_parser import samokat
 # from utkonos_parser import utkonos
-from gulliver_parser import gulliver
+# from gulliver_parser import gulliver
+from luding_parser import luding
 
 from parsers_core.utils import write_excel
 from config import table_name, parsers #, TelegramBot
@@ -115,7 +116,8 @@ parsers_funcs = {
     # 'https://samokat.ru/': samokat,
     # 'https://utkonos.ru/': utkonos,
     # 'www.wildberries.ru': wildberries,
-    'https://gulliver-ul.ru/': gulliver
+    # 'https://gulliver-ul.ru/': gulliver
+    'https://Luding.ru': luding,
 }
 
 def write_log(message, filename):
