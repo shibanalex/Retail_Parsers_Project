@@ -1,6 +1,6 @@
 import os
 import configparser
-import undetected_chromedriver as uc
+from DrissionPage import ChromiumPage, ChromiumOptions
 
 def get_browser(parser_cfg_name="MEGAMARKET"):
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -32,23 +32,22 @@ def get_browser(parser_cfg_name="MEGAMARKET"):
         except Exception:
             pass
 
-    options = uc.ChromeOptions()
-    options.add_argument(f"--user-data-dir={profile_dir}")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument(f"--window-size={browser_size}")
-    options.add_argument("--lang=ru-RU,ru")
+    co = ChromiumOptions()
+    co.set_user_data_path(profile_dir)
+    co.set_argument("--no-sandbox")
+    co.set_argument("--disable-dev-shm-usage")
+    co.set_argument("--disable-gpu")
+    co.set_argument(f"--window-size={browser_size}")
+    co.set_argument("--lang=ru-RU,ru")
 
-    driver = uc.Chrome(options=options)
-    driver.custom_min_delay = min_delay
-    driver.custom_max_delay = max_delay
-    driver.implicitly_wait(2)
+    page = ChromiumPage(addr_or_opts=co)
+    page.custom_min_delay = min_delay
+    page.custom_max_delay = max_delay
     
-    driver._product_cache = {}
-    driver.current_location_id = "50"
+    page._product_cache = {}
+    page.current_location_id = "50"
 
-    return driver
+    return page
 
 def init_browser():
     return get_browser("MEGAMARKET")
