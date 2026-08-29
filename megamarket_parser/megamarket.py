@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import config
 from parsers_core.utils import update_retail_points
 
+
 from .browser import get_browser
 from .megamarket_utils import set_city, get_product_links, parse_product, check_and_bypass_waf
 
