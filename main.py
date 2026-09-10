@@ -44,10 +44,14 @@ uc.Chrome.__del__ = _patched_del
 # from magazinnoff_parser import magazinnoff
 #from cataloged_parser import cataloged
 # from vkusvill_parser import vkusvill
+from yarche_parser import yarche
+from vprok_parser import vprok
 # from azbuka_vkusa_parser import av
 #from tvoydom_parser import tvoydom
 # from alkoteka_parser import alkoteka
 # from simplewine_parser import simplewine
+from winelab_parser import winelab
+from winestyle_parser import winestyle
 # from winestreet_parser import winestreet
 # from amwine_parser import amwine
 # from letu_parser import letu
@@ -62,7 +66,8 @@ uc.Chrome.__del__ = _patched_del
 # from utkonos_parser import utkonos
 # from gulliver_parser import gulliver
 # from luding_parser import luding
-from megamarket_parser import megamarket
+# from megamarket_parser import megamarket
+
 
 from parsers_core.utils import write_excel
 from config import table_name, parsers #, TelegramBot
@@ -99,10 +104,14 @@ parsers_funcs = {
 #   "https://magazinnoff.ru/": magazinnoff,
 #   "https://cataloged.ru/": cataloged,
 #    "https://vkusvill.ru/": vkusvill,
+    "https://yarcheplus.ru/": yarche,
+    "https://www.vprok.ru/": vprok,
     # "https://av.ru/": av,
 #    "https://tvoydom.ru/": tvoydom,
     # "https://alkoteka.com/": alkoteka,
 #    "https://simplewine.ru/": simplewine,
+    "https://www.winelab.ru/": winelab,
+    "https://winestyle.ru/": winestyle,
     # "https://winestreet.ru/": winestreet,
     # "https://amwine.ru/": amwine,
     # "https://www.letu.ru/": letu
@@ -119,7 +128,7 @@ parsers_funcs = {
     # 'www.wildberries.ru': wildberries,
     # 'https://gulliver-ul.ru/': gulliver,
     # 'https://Luding.ru': luding,
-    'https://megamarket.ru/': megamarket
+    # 'https://megamarket.ru/': megamarket
 }
 
 def write_log(message, filename):
