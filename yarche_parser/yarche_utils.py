@@ -123,7 +123,19 @@ SEARCH_QUERY = """
 """
 
 
-def search_products(session, token, query_text, page_limit=48, max_pages=20):
+def dump_debug(debug_dir, label, text):
+    if not debug_dir:
+        return
+    os.makedirs(debug_dir, exist_ok=True)
+    path = os.path.join(debug_dir, f"{label}.json")
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text or "")
+    except Exception:
+        pass
+
+
+def search_products(session, token, query_text, page_limit=48, max_pages=20, debug_dir=None):
     global LAST_HTTP_STATUS
     products = []
     page_num = 1
@@ -144,6 +156,7 @@ def search_products(session, token, query_text, page_limit=48, max_pages=20):
             "User-Agent": UA,
         }
         r = _request(session, "POST", API_URL, json=payload, headers=headers)
+        dump_debug(debug_dir, f"{query_text}_page{page_num}", r.text)
         if r.status_code == 500:
             break
         data = r.json()

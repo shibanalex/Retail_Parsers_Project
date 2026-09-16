@@ -16,8 +16,11 @@ from .winestyle_utils import (
     is_served_city,
     to_row,
     smart_sleep,
+    dump_debug,
     BASE_URL,
 )
+
+DEBUG_DIR = os.path.join(os.path.dirname(__file__), "debug_dump")
 
 RETAIL = "Winestyle"
 LAST_HTTP_STATUS = None
@@ -30,6 +33,8 @@ def get_all_data(shop_name=RETAIL, proxy=None):
     cities = getattr(config, "cities", [])
     search_req = getattr(config, "search_req", [])
     brand = getattr(config, "brand", [])
+    debug_mode = getattr(config, "debug_mode", False)
+    debug_dir = DEBUG_DIR if debug_mode else None
 
     if brand and not search_req:
         queries = list(brand)
@@ -62,8 +67,9 @@ def get_all_data(shop_name=RETAIL, proxy=None):
                     pages.append(f"{BASE_URL}/{slug}/")
 
                 products = []
-                for url in pages:
+                for i, url in enumerate(pages):
                     r = fetch(session, url)
+                    dump_debug(debug_dir, f"{q}_{i}", r.text)
                     if r.status_code == 500:
                         print(f"[{shop_name}] Ошибка 500 на {url} — пропускаю.")
                         continue

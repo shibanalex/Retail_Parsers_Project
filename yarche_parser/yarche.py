@@ -19,6 +19,8 @@ from .yarche_utils import (
     smart_sleep,
 )
 
+DEBUG_DIR = os.path.join(os.path.dirname(__file__), "debug_dump")
+
 RETAIL = "Ярче!"
 LAST_HTTP_STATUS = None
 
@@ -30,6 +32,8 @@ def get_all_data(shop_name=RETAIL, proxy=None):
     cities = getattr(config, "cities", [])
     search_req = getattr(config, "search_req", [])
     brand = getattr(config, "brand", [])
+    debug_mode = getattr(config, "debug_mode", False)
+    debug_dir = DEBUG_DIR if debug_mode else None
 
     if brand and not search_req:
         queries = list(brand)
@@ -55,7 +59,7 @@ def get_all_data(shop_name=RETAIL, proxy=None):
             products_by_query = {}
             for q in queries:
                 print(f"[{shop_name}] Сбор данных по запросу: {q}")
-                products = search_products(session, token, q)
+                products = search_products(session, token, q, debug_dir=debug_dir)
                 if filter_brand:
                     products = filter_by_brand(products, brand)
                 if not products:

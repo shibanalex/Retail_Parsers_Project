@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import json
+import os
 import random
 import re
 import time
@@ -7,6 +9,42 @@ from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.vprok.ru"
 LAST_HTTP_STATUS = None
+
+
+def dump_debug(debug_dir, label, text):
+    if not debug_dir:
+        return
+    os.makedirs(debug_dir, exist_ok=True)
+    path = os.path.join(debug_dir, f"{label}.html")
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text or "")
+    except Exception:
+        pass
+
+
+def capture_status(driver):
+    global LAST_HTTP_STATUS
+    try:
+        logs = driver.get_log("performance")
+    except Exception:
+        return
+    status = None
+    for entry in logs:
+        try:
+            msg = json.loads(entry["message"])["message"]
+        except Exception:
+            continue
+        if msg.get("method") != "Network.responseReceived":
+            continue
+        params = msg.get("params", {})
+        if params.get("type") != "Document":
+            continue
+        response = params.get("response", {})
+        if BASE_URL in (response.get("url") or ""):
+            status = response.get("status")
+    if status is not None:
+        LAST_HTTP_STATUS = status
 
 KNOWN_CITIES = {
     "москва", "зеленоград", "троицк", "щербинка", "апрелевка", "балашиха",
@@ -42,9 +80,31 @@ def check_page(html):
     global LAST_HTTP_STATUS
     text = html or ""
     if "похожи на автоматические" in text or "Ошибка #" in text:
-        LAST_HTTP_STATUS = 403
-        raise RuntimeError("Ошибка 403")
-    LAST_HTTP_STATUS = 200
+        code = LAST_HTTP_STATUS if LAST_HTTP_STATUS in (403, 404, 429, 500) else 403
+        LAST_HTTP_STATUS = code
+        raise RuntimeError(f"Ошибка {code}")
+
+
+def _wait_ready(driver, timeout=15):
+    from selenium.webdriver.support.ui import WebDriverWait
+    try:
+        WebDriverWait(driver, timeout).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+    except Exception:
+        pass
+
+
+def _wait_for(driver, selector, timeout=10):
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
+    try:
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+        )
+    except Exception:
+        pass
 
 
 def smart_sleep(driver):

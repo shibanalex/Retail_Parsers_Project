@@ -15,15 +15,22 @@ from .vprok_utils import (
     parse_search_page,
     extract_brand,
     check_page,
+    capture_status,
     is_served_city,
     to_row,
     smart_sleep,
+    dump_debug,
+    _wait_ready,
+    _wait_for,
     BASE_URL,
 )
+
+DEBUG_DIR = os.path.join(os.path.dirname(__file__), "debug_dump")
 
 RETAIL = "Впрок"
 LAST_HTTP_STATUS = None
 MAX_PAGES = 10
+_TILE_SELECTOR = "[class*='UiProductTileMain_root']"
 
 
 def get_all_data(shop_name=RETAIL):
@@ -33,6 +40,8 @@ def get_all_data(shop_name=RETAIL):
     cities = getattr(config, "cities", [])
     search_req = getattr(config, "search_req", [])
     brand = getattr(config, "brand", [])
+    debug_mode = getattr(config, "debug_mode", False)
+    debug_dir = DEBUG_DIR if debug_mode else None
 
     if brand and not search_req:
         queries = list(brand)
@@ -61,8 +70,11 @@ def get_all_data(shop_name=RETAIL):
                 for page_num in range(1, MAX_PAGES + 1):
                     suffix = f"&page={page_num}" if page_num > 1 else ""
                     driver.get(f"{BASE_URL}/catalog/search?text={q}{suffix}")
-                    time.sleep(5)
+                    _wait_ready(driver)
+                    _wait_for(driver, _TILE_SELECTOR, 8)
+                    capture_status(driver)
                     check_page(driver.page_source)
+                    dump_debug(debug_dir, f"{q}_page{page_num}", driver.page_source)
                     products = parse_search_page(driver.page_source)
                     if not products:
                         break
@@ -85,7 +97,9 @@ def get_all_data(shop_name=RETAIL):
                 if i % 5 == 0 or i == total:
                     print(f"[{shop_name}] Обработано товаров: {i} из {total}")
                 driver.get(p["url"])
-                time.sleep(3)
+                _wait_ready(driver)
+                time.sleep(1)
+                capture_status(driver)
                 p["brand"] = extract_brand(driver.page_source)
                 smart_sleep(driver)
 

@@ -117,6 +117,18 @@ def fetch(session, url):
     return r
 
 
+def dump_debug(debug_dir, label, text):
+    if not debug_dir:
+        return
+    os.makedirs(debug_dir, exist_ok=True)
+    path = os.path.join(debug_dir, f"{label}.html")
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text or "")
+    except Exception:
+        pass
+
+
 _VOL_RE = re.compile(r'(\d+[.,]?\d*)\s*(мл|л|кг|г)(?![а-яёa-z])', re.IGNORECASE)
 
 

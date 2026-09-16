@@ -4,6 +4,9 @@ import os
 import time
 
 import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 
 def _apply_window(options, section="WINESTYLE"):
@@ -40,17 +43,36 @@ def _confirm_age(driver):
     time.sleep(1)
 
 
+def _wait_ready(driver, timeout=15):
+    try:
+        WebDriverWait(driver, timeout).until(
+            lambda d: d.execute_script("return document.readyState") == "complete"
+        )
+    except Exception:
+        pass
+
+
+def _wait_for(driver, selector, timeout=10):
+    try:
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+        )
+    except Exception:
+        pass
+
+
 def solve_challenge(search_text="вино"):
     options = uc.ChromeOptions()
     _apply_window(options)
     driver = uc.Chrome(options=options)
     try:
         driver.get("https://winestyle.ru/")
-        time.sleep(4)
+        _wait_ready(driver)
+        time.sleep(1.5)
         _confirm_age(driver)
-        time.sleep(1)
         driver.get(f"https://winestyle.ru/search/?text={search_text}")
-        time.sleep(5)
+        _wait_ready(driver)
+        _wait_for(driver, ".m-product-item, button", 10)
         _confirm_age(driver)
         cookies = {c["name"]: c["value"] for c in driver.get_cookies()}
         ua = driver.execute_script("return navigator.userAgent")

@@ -36,8 +36,13 @@ def get_browser(parser_cfg_name="VPROK"):
     else:
         w, h = size.split("x")[:2]
         options.add_argument(f"--window-size={w},{h}")
+    options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
     driver = uc.Chrome(options=options)
+    try:
+        driver.execute_cdp_cmd("Network.enable", {})
+    except Exception:
+        pass
     driver.custom_min_delay = min_delay
     driver.custom_max_delay = max_delay
     return driver

@@ -136,12 +136,25 @@ def _parse_old_price(card):
         return None
 
 
-def search_products(session, query_text, max_pages=10):
+def dump_debug(debug_dir, label, text):
+    if not debug_dir:
+        return
+    os.makedirs(debug_dir, exist_ok=True)
+    path = os.path.join(debug_dir, f"{label}.html")
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text or "")
+    except Exception:
+        pass
+
+
+def search_products(session, query_text, max_pages=10, debug_dir=None):
     products = []
     url = f"{BASE_URL}/search?text={query_text}"
     page_num = 1
     while url and page_num <= max_pages:
         r = _request(session, "GET", url)
+        dump_debug(debug_dir, f"{query_text}_page{page_num}", r.text)
         if r.status_code == 500:
             break
         soup = BeautifulSoup(r.text, "html.parser")
