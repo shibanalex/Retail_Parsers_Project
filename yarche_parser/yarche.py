@@ -21,7 +21,8 @@ from .yarche_utils import (
 
 DEBUG_DIR = os.path.join(os.path.dirname(__file__), "debug_dump")
 
-RETAIL = "Ярче!"
+_URL = "https://yarcheplus.ru/"
+RETAIL = getattr(config, "parsers", {}).get(_URL, "Ярче!")
 LAST_HTTP_STATUS = None
 
 

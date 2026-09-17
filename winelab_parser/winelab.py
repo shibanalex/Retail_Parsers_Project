@@ -9,17 +9,19 @@ import config
 from parsers_core.utils import update_retail_points
 from . import winelab_utils
 from .winelab_utils import (
-    bootstrap_session,
+    bootstrap_session_and_driver,
     search_products,
-    fetch_product_detail,
+    fetch_product_detail_browser,
     is_served_city,
+    is_alcohol_query,
     to_row,
     smart_sleep,
 )
 
 DEBUG_DIR = os.path.join(os.path.dirname(__file__), "debug_dump")
 
-RETAIL = "ВинЛаб"
+_URL = "https://www.winelab.ru/"
+RETAIL = getattr(config, "parsers", {}).get(_URL, "ВинЛаб")
 LAST_HTTP_STATUS = None
 
 
@@ -39,6 +41,10 @@ def get_all_data(shop_name=RETAIL, proxy=None):
     else:
         queries = list(search_req)
         filter_brand = bool(brand)
+        skipped_queries = [q for q in queries if not is_alcohol_query(q)]
+        queries = [q for q in queries if is_alcohol_query(q)]
+        for q in skipped_queries:
+            print(f"[{shop_name}] Запрос '{q}' пропущен — не алкоголь, сеть не продаёт.")
 
     served_cities, no_shops_cities = [], []
     for city in cities:
@@ -47,11 +53,12 @@ def get_all_data(shop_name=RETAIL, proxy=None):
     all_data = []
     _error = None
     session = None
+    driver = None
 
     try:
         if served_cities and queries:
             print(f"[{shop_name}] Инициализация браузера и сессии...")
-            session = bootstrap_session()
+            session, driver = bootstrap_session_and_driver()
             if proxy:
                 session.proxies.update(proxy)
 
@@ -67,11 +74,27 @@ def get_all_data(shop_name=RETAIL, proxy=None):
 
             enriched = []
             total = len(unique_cards)
+            checked = 0
+            blocked = 0
             for i, (pid, card) in enumerate(unique_cards.items(), 1):
                 if i % 5 == 0 or i == total:
                     print(f"[{shop_name}] Обработано товаров: {i} из {total}")
-                detail = fetch_product_detail(session, pid, card.get("url"))
-                smart_sleep()
+                detail = None
+                if card.get("url"):
+                    try:
+                        detail = fetch_product_detail_browser(driver, card.get("url"))
+                    except Exception:
+                        detail = None
+                    checked += 1
+                    if detail == "blocked":
+                        blocked += 1
+                        detail = None
+                    if checked == 10 and blocked == checked:
+                        winelab_utils.LAST_HTTP_STATUS = 403
+                        raise RuntimeError(
+                            "Ошибка 403: страницы товара ВинЛаб отдают "
+                            "stage.winelab.ru/Qrator — заблокирован доступ к деталям товара")
+                    smart_sleep()
                 if filter_brand:
                     brand_val = (detail or {}).get("brand") or ""
                     if isinstance(brand_val, dict):
@@ -101,6 +124,8 @@ def get_all_data(shop_name=RETAIL, proxy=None):
         LAST_HTTP_STATUS = winelab_utils.LAST_HTTP_STATUS
         if session is not None:
             session.close()
+        if driver is not None:
+            driver.quit()
 
     for idx, row in enumerate(all_data, 1):
         row["Номер"] = idx

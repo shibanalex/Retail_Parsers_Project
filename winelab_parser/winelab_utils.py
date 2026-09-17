@@ -13,6 +13,21 @@ from bs4 import BeautifulSoup
 BASE_URL = "https://www.winelab.ru"
 LAST_HTTP_STATUS = None
 
+ALCOHOL_KEYWORDS = {
+    "вино", "винн", "виски", "водка", "коньяк", "бренди", "ром", "джин",
+    "текила", "пиво", "сидр", "шампанск", "игрист", "ликер", "ликёр",
+    "вермут", "абсент", "портвейн", "херес", "саке", "мескаль", "глинтвейн",
+    "каберне", "мерло", "шардоне", "совиньон", "рислинг", "пино",
+    "мускат", "санджовезе", "темпранильо", "мальбек", "шираз", "сира",
+    "зинфандель", "неббиоло", "грюнер", "просекко", "кава", "граппа",
+    "перно", "чинзано", "мартини", "джек дэниэлс", "абсолют",
+}
+
+
+def is_alcohol_query(query):
+    q = (query or "").strip().lower()
+    return any(k in q for k in ALCOHOL_KEYWORDS)
+
 KNOWN_CITIES = {
     "москва", "зеленоград", "балашиха", "видное", "долгопрудный", "домодедово",
     "жуковский", "истра", "королёв", "королев", "красногорск", "коломна",
@@ -171,7 +186,7 @@ def search_products(session, query_text, max_pages=10, debug_dir=None):
                 "price": card.get("data-price"),
                 "old_price": _parse_old_price(card),
                 "category": card.get("data-category") or "",
-                "url": BASE_URL + href if href else f"{BASE_URL}/product/{pid}",
+                "url": BASE_URL + href if href else "",
             })
 
         container = soup.select_one(".productcards")
@@ -185,17 +200,50 @@ def search_products(session, query_text, max_pages=10, debug_dir=None):
     return products
 
 
-def fetch_product_detail(session, product_id, url):
-    r = _request(session, "GET", url)
-    if r.status_code == 500:
-        return None
-    m = re.search(r'application/ld\+json["\']>\s*(\{.*?\})\s*</script>', r.text, re.S)
+def _extract_ld_json(html):
+    m = re.search(r'application/ld\+json["\']>\s*(\{.*?\})\s*</script>', html or "", re.S)
     if not m:
         return None
     try:
         return json.loads(m.group(1))
     except ValueError:
         return None
+
+
+def fetch_product_detail(session, product_id, url):
+    r = _request(session, "GET", url)
+    if r.status_code == 500:
+        return None
+    return _extract_ld_json(r.text)
+
+
+def bootstrap_session_and_driver():
+    from .browser import solve_challenge
+    driver, cookies, ua = solve_challenge(keep_open=True)
+    session = requests.Session()
+    for k, v in cookies.items():
+        session.cookies.set(k, v, domain="www.winelab.ru")
+    session.headers.update({
+        "User-Agent": ua,
+        "Accept-Language": "ru-RU,ru;q=0.9",
+    })
+    return session, driver
+
+
+def is_blocked_page(html):
+    text = html or ""
+    return "stage.winelab.ru" in text or "qrator" in text.lower()
+
+
+def fetch_product_detail_browser(driver, url):
+    from .browser import _wait_ready
+    driver.get(url)
+    _wait_ready(driver)
+    time.sleep(1)
+    html = driver.page_source
+    if is_blocked_page(html):
+        return "blocked"
+    return _extract_ld_json(html)
 
 
 _VOL_RE = re.compile(r'(\d+[.,]?\d*)\s*(мл|л|кг|г)(?![а-яёa-z])', re.IGNORECASE)

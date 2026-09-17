@@ -27,7 +27,8 @@ from .vprok_utils import (
 
 DEBUG_DIR = os.path.join(os.path.dirname(__file__), "debug_dump")
 
-RETAIL = "Впрок"
+_URL = "https://www.vprok.ru/"
+RETAIL = getattr(config, "parsers", {}).get(_URL, "Впрок")
 LAST_HTTP_STATUS = None
 MAX_PAGES = 10
 _TILE_SELECTOR = "[class*='UiProductTileMain_root']"

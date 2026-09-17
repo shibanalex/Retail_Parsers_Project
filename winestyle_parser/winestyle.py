@@ -14,6 +14,7 @@ from .winestyle_utils import (
     parse_cards,
     category_slug,
     is_served_city,
+    is_alcohol_query,
     to_row,
     smart_sleep,
     dump_debug,
@@ -22,7 +23,8 @@ from .winestyle_utils import (
 
 DEBUG_DIR = os.path.join(os.path.dirname(__file__), "debug_dump")
 
-RETAIL = "Winestyle"
+_URL = "https://winestyle.ru/"
+RETAIL = getattr(config, "parsers", {}).get(_URL, "Winestyle")
 LAST_HTTP_STATUS = None
 
 
@@ -42,6 +44,10 @@ def get_all_data(shop_name=RETAIL, proxy=None):
     else:
         queries = list(search_req)
         filter_brand = bool(brand)
+        skipped_queries = [q for q in queries if not is_alcohol_query(q)]
+        queries = [q for q in queries if is_alcohol_query(q)]
+        for q in skipped_queries:
+            print(f"[{shop_name}] Запрос '{q}' пропущен — не алкоголь, сеть не продаёт.")
 
     served_cities, no_shops_cities = [], []
     for city in cities:

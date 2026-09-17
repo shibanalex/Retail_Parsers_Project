@@ -60,7 +60,7 @@ def _wait_for(driver, selector, timeout=10):
         pass
 
 
-def solve_challenge(search_text="вино"):
+def solve_challenge(search_text="вино", keep_open=False):
     options = uc.ChromeOptions()
     _apply_window(options)
     driver = uc.Chrome(options=options)
@@ -87,6 +87,10 @@ def solve_challenge(search_text="вино"):
 
         cookies = {c["name"]: c["value"] for c in driver.get_cookies()}
         ua = driver.execute_script("return navigator.userAgent")
-    finally:
+    except Exception:
         driver.quit()
+        raise
+    if keep_open:
+        return driver, cookies, ua
+    driver.quit()
     return cookies, ua

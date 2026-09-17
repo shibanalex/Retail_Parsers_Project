@@ -235,7 +235,7 @@ def to_row(product, shop_name, city):
     categories = product.get("categories") or []
     category = categories[-1]["name"] if categories else ""
 
-    brand = product.get("brand") or "Ярче!"
+    brand = product.get("brand") or ""
 
     clean_name, name_vol, name_wt = split_name_measure(product.get("name") or "")
     api_vol, api_vol_as_wt = norm_measure(product.get("volumeUnit"))
