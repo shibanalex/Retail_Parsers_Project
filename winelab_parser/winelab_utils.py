@@ -118,19 +118,6 @@ def _request(session, method, url, **kw):
     return r
 
 
-def bootstrap_session():
-    from .browser import solve_challenge
-    cookies, ua = solve_challenge()
-    session = requests.Session()
-    for k, v in cookies.items():
-        session.cookies.set(k, v, domain="www.winelab.ru")
-    session.headers.update({
-        "User-Agent": ua,
-        "Accept-Language": "ru-RU,ru;q=0.9",
-    })
-    return session
-
-
 def _next_url(current_url, next_page_url):
     npu_qs = parse_qs(urlparse(next_page_url).query)
     cur = urlparse(current_url)
@@ -208,13 +195,6 @@ def _extract_ld_json(html):
         return json.loads(m.group(1))
     except ValueError:
         return None
-
-
-def fetch_product_detail(session, product_id, url):
-    r = _request(session, "GET", url)
-    if r.status_code == 500:
-        return None
-    return _extract_ld_json(r.text)
 
 
 def bootstrap_session_and_driver():
