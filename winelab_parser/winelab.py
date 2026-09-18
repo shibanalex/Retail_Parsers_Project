@@ -89,11 +89,12 @@ def get_all_data(shop_name=RETAIL, proxy=None):
                     if detail == "blocked":
                         blocked += 1
                         detail = None
-                    if checked == 10 and blocked == checked:
+                    if checked >= 15 and blocked / checked >= 0.7:
                         winelab_utils.LAST_HTTP_STATUS = 403
                         raise RuntimeError(
-                            "Ошибка 403: страницы товара ВинЛаб отдают "
-                            "stage.winelab.ru/Qrator — заблокирован доступ к деталям товара")
+                            f"Ошибка 403: страницы товара ВинЛаб отдают "
+                            f"stage.winelab.ru/Qrator — заблокировано {blocked} из "
+                            f"{checked} проверенных, доступ к деталям товара закрыт")
                     smart_sleep()
                 if filter_brand:
                     brand_val = (detail or {}).get("brand") or ""
