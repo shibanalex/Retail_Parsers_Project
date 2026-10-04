@@ -5,3 +5,4 @@ log/
 debug_dump/
 *_profile/
 images_input/
+image_parser_service/tessdata/

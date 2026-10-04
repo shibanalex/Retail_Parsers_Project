@@ -5,16 +5,14 @@ import re
 import pytesseract
 from PIL import Image, ImageFilter, ImageOps
 
+from . import ocr_setup
+
 SUPPORTED_FORMATS = {"JPEG", "PNG"}
 
-_TESSERACT_CANDIDATES = [
-    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-]
-for _path in _TESSERACT_CANDIDATES:
-    if os.path.exists(_path):
-        pytesseract.pytesseract.tesseract_cmd = _path
-        break
+_OCR_CFG = ocr_setup.resolve(require_rus=False)
+if _OCR_CFG:
+    pytesseract.pytesseract.tesseract_cmd = _OCR_CFG["cmd"]
+    os.environ["TESSDATA_PREFIX"] = _OCR_CFG["tessdata"]
 
 
 def collect_images(source):
@@ -50,9 +48,11 @@ def preprocess(img):
 
 
 def ocr_image(path):
+    if _OCR_CFG is None:
+        raise RuntimeError("Tesseract не настроен — запусти: python -m image_parser_service.ocr_setup")
     with Image.open(path) as img:
         processed = preprocess(img)
-        return pytesseract.image_to_string(processed, lang="rus+eng")
+        return pytesseract.image_to_string(processed, lang=_OCR_CFG["lang"])
 
 
 _PRICE_TAGGED_RE = re.compile(r'(\d[\d\s]{0,7}[.,]\d{2})\s*(?:₽|руб|р\.)', re.IGNORECASE)
