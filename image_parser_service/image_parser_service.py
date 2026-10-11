@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath(
 import config
 from parsers_core.utils import update_retail_points
 from . import image_parser_utils
+from . import flyer_pdf_utils
 from .image_parser_utils import (
     collect_images,
     detect_format,
@@ -39,13 +40,47 @@ def get_all_data(source=None, shop_name=None, city=None):
     try:
         paths = collect_images(source)
         if not paths:
-            print(f"[{shop_name}] Источник '{source}' не содержит файлов jpg/png.")
+            print(f"[{shop_name}] Источник '{source}' не содержит файлов jpg/png/pdf.")
             return all_data
 
         print(f"[{shop_name}] Найдено файлов: {len(paths)}")
         total = len(paths)
         for i, path in enumerate(paths, 1):
             name_only = os.path.basename(path)
+
+            if name_only.lower().endswith(".pdf"):
+                try:
+                    items = flyer_pdf_utils.parse_flyer_pdf(path, debug_dir=debug_dir)
+                except Exception as e:
+                    print(f"[{shop_name}] Ошибка разбора {name_only}: {e}")
+                    continue
+                print(f"[{shop_name}] {name_only}: найдено позиций {len(items)}")
+                for item in items:
+                    if item["old_price"]:
+                        regular, promo = item["old_price"], item["price"]
+                    else:
+                        regular, promo = item["price"], 0
+                    all_data.append({
+                        "Сеть": shop_name,
+                        "Тип магазина": "Листовка",
+                        "Адрес Торговой точки": city,
+                        "Бренд": item["brand"],
+                        "Название продукта": item["name"],
+                        "Цена": float(regular),
+                        "Фото товара": "",
+                        "Ссылка на страницу": "",
+                        "Объем": item["volume"],
+                        "Вес": item["weight"],
+                        "Остаток": "1",
+                        "Категория": "",
+                        "Цена по акции": float(promo),
+                        "Рейтинг": 0.0,
+                        "Артикул": item["sku"],
+                    })
+                if i % 5 == 0 or i == total:
+                    print(f"[{shop_name}] Обработано файлов: {i} из {total}")
+                continue
+
             fmt = detect_format(path)
             if fmt not in SUPPORTED_FORMATS:
                 print(f"[{shop_name}] Пропущен {name_only} — формат "
@@ -91,6 +126,7 @@ def get_all_data(source=None, shop_name=None, city=None):
                 "Категория": "",
                 "Цена по акции": 0,
                 "Рейтинг": 0.0,
+                "Артикул": "",
             })
 
             if i % 5 == 0 or i == total:
@@ -117,5 +153,21 @@ def main(source=None, shop_name=None, city=None):
     return get_all_data(source=source, shop_name=shop_name, city=city)
 
 
+def run_and_export(source=None, shop_name=None, city=None, output_path=None):
+    from datetime import datetime
+    from parsers_core.utils import write_excel
+
+    rows = main(source=source, shop_name=shop_name, city=city)
+    if not output_path:
+        out_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
+        os.makedirs(out_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        output_path = os.path.join(out_dir, f"image_scan_{timestamp}.xlsx")
+    write_excel(rows, output_path)
+    return output_path, rows
+
+
 if __name__ == "__main__":
-    print(f"rows: {len(main())}")
+    path, rows = run_and_export()
+    print(f"rows: {len(rows)}")
+    print(f"file: {path}")

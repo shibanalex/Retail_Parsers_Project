@@ -22,7 +22,7 @@ def collect_images(source):
         paths = []
         for name in sorted(os.listdir(source)):
             ext = os.path.splitext(name)[1].lower()
-            if ext in (".jpg", ".jpeg", ".png"):
+            if ext in (".jpg", ".jpeg", ".png", ".pdf"):
                 paths.append(os.path.join(source, name))
         return paths
     if os.path.isfile(source):
