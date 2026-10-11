@@ -8,9 +8,24 @@ from . import image_parser_utils
 
 MIN_TEXT_LEN = 30
 
-_SKU_LINE_RE = re.compile(r'^[\d/]{4,}$')
+_SKU_LINE_RE = re.compile(r'^[\d/]{3,}$')
 _OLDPRICE_RE = re.compile(r'^(\d{3,})\s*(\d{1,2})%$')
 _VOL_RE = re.compile(r'(\d+[.,]?\d*)\s*(мл|л|кг|г)(?![а-яёa-z])', re.IGNORECASE)
+_FOOTNOTE_LINE_RE = re.compile(
+    r'^\*|^\d+\*?$|^\d{3,}\s+\d+\+\d+$|^(ЦЕНА|ШТ\.?|одновременно\.?)\b',
+    re.IGNORECASE,
+)
+
+
+def _is_footnote_line(line):
+    return bool(_FOOTNOTE_LINE_RE.match(line))
+
+
+_JUNK_NAME_RE = re.compile(r'^\d|ЦЕНА\s+(ОТ|ЗА)\s+\d|^ШТ\.', re.IGNORECASE)
+
+
+def _is_junk_name(name):
+    return bool(_JUNK_NAME_RE.search(name))
 
 
 def _looks_like_brand(seg):
@@ -60,15 +75,16 @@ def parse_flyer_page(text):
                     consumed += 1
 
             full_name = " ".join(name_buf).strip()
+            full_name = re.sub(r'^\d{3,}\s*\d{1,2}%\s*', '', full_name)
             name_buf = []
 
-            if rub is not None:
+            clean_name = re.sub(r'\s{2,}', ' ', full_name).strip(" ,;")
+            if rub is not None and len(clean_name) >= 3 and not _is_junk_name(clean_name):
                 parts = [p.strip() for p in full_name.split(",")]
                 brand = ""
                 if len(parts) >= 3 and _looks_like_brand(parts[-2]):
                     brand = parts[-2]
                 volume, weight = _extract_measure(full_name)
-                clean_name = re.sub(r'\s{2,}', ' ', full_name).strip(" ,;")
                 items.append({
                     "name": clean_name,
                     "brand": brand,
@@ -81,7 +97,8 @@ def parse_flyer_page(text):
                 })
             i += consumed
         else:
-            name_buf.append(line)
+            if not _is_footnote_line(line):
+                name_buf.append(line)
             i += 1
     return items
 
