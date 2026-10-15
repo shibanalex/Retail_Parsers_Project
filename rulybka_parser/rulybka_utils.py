@@ -8,12 +8,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-
-def smart_sleep(driver, fallback=2.0):
-    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
-        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
-    else:
-        time.sleep(fallback)
+from parsers_core.settings import smart_sleep
 
 def check_and_bypass_waf(driver, shop_name):
     try:
@@ -123,7 +118,7 @@ def clean_price(price_str):
     cleaned = re.sub(r'[^\d.,]', '', price_str.replace(',', '.'))
     try:
         return float(cleaned)
-    except:
+    except Exception:
         return 0.0
 
 def parse_product(driver, product_url, retail_name, city_name, shop_name):
@@ -205,7 +200,7 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
             if rating_container and rating_container.previous_sibling:
                 try:
                     rating = float(rating_container.previous_sibling.text.strip())
-                except:
+                except Exception:
                     pass
 
         stock_int = 1

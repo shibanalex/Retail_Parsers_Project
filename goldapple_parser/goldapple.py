@@ -4,8 +4,11 @@ import math
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from config import cities, search_req, parsers
+import config
+cities = getattr(config, "cities", [])
+search_req = getattr(config, "search_req", [])
 from parsers_core.utils import update_retail_points
+from parsers_core.names import retail_name
 from .browser import get_browser
 from .goldapple_utils import set_city, fetch_api_data, process_product_json, smart_sleep
 
@@ -81,7 +84,7 @@ def get_all_data(shop_name):
 
 def main(shop_name=None):
     if not shop_name:
-        shop_name = parsers.get("https://goldapple.ru/", "В конфиге не указано название для https://goldapple.ru/")
+        shop_name = retail_name("https://goldapple.ru/")
     return get_all_data(shop_name)
 
 if __name__ == "__main__":

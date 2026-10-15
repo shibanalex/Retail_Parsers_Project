@@ -5,6 +5,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import config
 from parsers_core.utils import update_retail_points
+from parsers_core.names import retail_name
 from .browser import get_browser
 from .gulliver_utils import set_city, get_product_links, parse_product
 
@@ -12,10 +13,8 @@ def get_all_data(shop_name):
     driver = get_browser("GULLIVER")
     all_data = []
     
-    
     search_queries = getattr(config, 'search_req', [])
     brand_queries = getattr(config, 'brand', [])
-    
     
     all_queries = []
     if isinstance(search_queries, list):
@@ -23,7 +22,6 @@ def get_all_data(shop_name):
     if isinstance(brand_queries, list):
         all_queries.extend(brand_queries)
         
-    
     all_queries = list(dict.fromkeys([str(q).strip() for q in all_queries if q and str(q).strip()]))
 
     try:
@@ -41,7 +39,6 @@ def get_all_data(shop_name):
 
             points_count = 1
 
-            
             for query in all_queries:
                 print(f"[{shop_name}] Сбор данных по запросу: {query}")
                 product_links = get_product_links(driver, query, shop_name)
@@ -70,8 +67,11 @@ def get_all_data(shop_name):
 
     return all_data
 
-def main(shop_name="Гулливер"):
-    return get_all_data(shop_name)
+SITE_URL = "https://gulliver-ul.ru/"
+
+
+def main(shop_name=None):
+    return get_all_data(shop_name or retail_name(SITE_URL))
 
 if __name__ == "__main__":
     main()

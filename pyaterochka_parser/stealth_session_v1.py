@@ -29,13 +29,12 @@ def local_proxy_for(proxy):
 
 
 def _init_uc_driver(headless: bool, locale: str, proxy: Optional[str]):
-    """Эта функция создает сам браузер. Ее ищет ваш get_items_data.py"""
+    """Старая версия запуска браузера, не используется."""
     options = uc.ChromeOptions()
     options.add_argument(f"--lang={locale}")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
-    # Пытаемся найти хром автоматически
     chrome_path = get_chrome_binary()
 
     driver = uc.Chrome(
@@ -47,7 +46,6 @@ def _init_uc_driver(headless: bool, locale: str, proxy: Optional[str]):
     return driver
 
 
-
 def driver_get_json(driver, url: str, params: Optional[dict] = None, timeout_s: float = 15.0) -> Any:
     from urllib.parse import urlencode
     full_url = url
@@ -55,13 +53,12 @@ def driver_get_json(driver, url: str, params: Optional[dict] = None, timeout_s: 
         full_url += "?" + urlencode(params)
 
     driver.get(full_url)
-    time.sleep(1)  # Небольшая пауза для прогрузки
+    time.sleep(1)
 
     try:
         text = driver.find_element("tag name", "body").text
         return json.loads(text)
     except Exception as e:
-        # Если это не JSON, возможно там бан или ошибка
         if is_forbidden_ban(driver.page_source):
             raise RuntimeError("IP_BANNED: Доступ к Пятерочке ограничен.")
         return {}
@@ -72,20 +69,19 @@ def pyaterochka_driver(headless: bool = False, locale: str = "ru-RU", proxy: Opt
                        startup_timeout_s: float = 60.0):
     driver = _init_uc_driver(headless=headless, locale=locale, proxy=proxy)
     try:
-        # Прогрев: заходим на главную
         driver.get("https://5ka.ru/")
         time.sleep(3)
         yield driver
     finally:
         try:
             driver.quit()
-        except:
+        except Exception:
             pass
 
 
 @contextmanager
 def pyaterochka_requests_session(*args, **kwargs):
-    """Заглушка для сессии (если она понадобится)"""
+    """Заглушка."""
     import requests
     session = requests.Session()
     try:
@@ -94,7 +90,6 @@ def pyaterochka_requests_session(*args, **kwargs):
         session.close()
 
 
-# Дополнительные функции
 def _get_chrome_binary(*args, **kwargs): return get_chrome_binary()
 
 

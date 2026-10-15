@@ -5,20 +5,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import config
 from parsers_core.utils import update_retail_points
+from parsers_core.names import retail_name
 
 from .browser import get_browser
 from .luding_utils import set_city, get_product_links, parse_product, check_and_bypass_waf
 
 
-class LudingParserWrapper:
-    def __init__(self, shop_name="Luding"):
-        self.shop_name = shop_name
-
-    def main(self):
-        return get_all_data(self.shop_name)
-
-
-def get_all_data(shop_name="Luding"):
+def get_all_data(shop_name):
     driver = get_browser("LUDING")
     all_data = []
 
@@ -81,11 +74,11 @@ def get_all_data(shop_name="Luding"):
     return all_data
 
 
-def main(shop_name="Luding"):
-    return get_all_data(shop_name)
+SITE_URL = "https://luding.ru/"
 
 
-luding = LudingParserWrapper(shop_name="Luding")
+def main(shop_name=None):
+    return get_all_data(shop_name or retail_name(SITE_URL))
 
 
 if __name__ == "__main__":

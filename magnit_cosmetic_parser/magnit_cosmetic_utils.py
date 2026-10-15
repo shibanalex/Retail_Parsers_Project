@@ -3,9 +3,7 @@ import random
 import re
 import uuid
 import requests
-
-def smart_sleep(min_val=0.5, max_val=1.5):
-    time.sleep(random.uniform(min_val, max_val))
+from parsers_core.settings import sleep_between as smart_sleep
 
 def get_session():
     session = requests.Session()

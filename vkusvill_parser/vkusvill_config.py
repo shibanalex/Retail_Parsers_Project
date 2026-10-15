@@ -1,5 +1,3 @@
-RETAIL_NAME_GLOBAL = "ВкусВилл"
-
 # Карта городов и доменов
 VKUSVILL_CITIES_MAP = {
     "Москва": "",

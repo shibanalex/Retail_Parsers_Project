@@ -2,12 +2,7 @@ import time
 import random
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException
-
-def smart_sleep(driver, fallback=2.0):
-    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
-        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
-    else:
-        time.sleep(fallback)
+from parsers_core.settings import smart_sleep
 
 def check_and_bypass_waf(driver, shop_name):
     page_source = driver.page_source.lower()

@@ -2,6 +2,7 @@ import time
 import random
 import re
 from urllib.parse import quote
+from parsers_core.settings import smart_sleep
 
 
 MAX_PRODUCTS_PER_QUERY = 150
@@ -30,11 +31,6 @@ REGION_MAP = {
     "калуга": "40"
 }
 
-def smart_sleep(driver, fallback=1.5):
-    min_d = getattr(driver, "custom_min_delay", fallback)
-    max_d = getattr(driver, "custom_max_delay", fallback + 1.0)
-    time.sleep(random.uniform(min_d, max_d))
-
 def clean_price(price_val):
     if price_val is None:
         return 0.0
@@ -53,12 +49,10 @@ def extract_volume_weight(title_text, boxes, attributes):
     volume_str, weight_str = "", ""
     txt = str(title_text).lower()
 
-    
     vol_match = re.search(r"(\d+[.,]?\d*)\s*(мл|л)\b", txt)
     if vol_match:
         volume_str = f"{vol_match.group(1)} {vol_match.group(2)}"
 
-    
     if boxes and isinstance(boxes, list) and len(boxes) > 0:
         box_w = boxes[0].get("weight")
         box_unit = boxes[0].get("weightUnit", "кг")
@@ -72,13 +66,11 @@ def extract_volume_weight(title_text, boxes, attributes):
                 else:
                     weight_str = f"{w_float} {box_unit}"
 
-    
     if not weight_str:
         w_match = re.search(r"(\d+[.,]?\d*)\s*(г|кг)\b", txt)
         if w_match:
             weight_str = f"{w_match.group(1)} {w_match.group(2)}"
 
-    
     if attributes and isinstance(attributes, list):
         for attr in attributes:
             t = attr.get("title", "").lower()
@@ -118,7 +110,6 @@ def get_product_links(driver, query, shop_name):
     collected_links = []
     print(f"[{shop_name}] Сбор данных по запросу: {query}")
     
-    
     safe_query = quote(query)
     try:
         driver.get(f"https://megamarket.ru/catalog/?q={safe_query}")
@@ -140,7 +131,6 @@ def get_product_links(driver, query, shop_name):
     .catch(e => { return {'error': e.toString()}; });
     """
 
-    
     while len(collected_links) < MAX_PRODUCTS_PER_QUERY:
         payload = {
             "requestVersion": 12,
@@ -217,20 +207,16 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
         gtin_text = str(goods.get("goodsId", ""))
         photo_url = goods.get("titleImage", "")
         
-        
         rating_raw = cached_data.get("rating")
         float_rating = float(rating_raw) if rating_raw is not None and float(rating_raw) > 0 else None
         
-        
-        merchant_name = fav_offer.get("merchantName") or "Мегамаркет"
+        merchant_name = fav_offer.get("merchantName") or retail_name
         address_text = f"{city_name} ({merchant_name})"
 
-        
         stock_int = int(goods.get("stocks", 0))
         if stock_int == 0 and cached_data.get("isAvailable"):
             stock_int = 1
 
-        
         p_current = clean_price(fav_offer.get("finalPrice") or cached_data.get("finalPrice") or cached_data.get("price"))
         p_old = clean_price(fav_offer.get("oldPrice") or cached_data.get("crossedPrice"))
 
@@ -241,7 +227,6 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
             float_price_base = p_current if p_current > 0 else p_old
             float_price_promo = None
 
-        
         vol_str, weight_str = extract_volume_weight(
             product_name, 
             goods.get("boxes", []), 

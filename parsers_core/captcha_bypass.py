@@ -4,10 +4,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 def bypass_cataloged_antibot(driver, timeout=30):
-    """
-    Механизм обхода для Cataloged:
-    Автоматически ищет и нажимает кнопку 'Я не робот' и ждет загрузки контента.
-    """
+    """Cataloged: жмёт «Я не робот» и ждёт загрузки."""
     try:
         WebDriverWait(driver, 10).until(lambda d: d.execute_script('return document.readyState') == 'complete')
         time.sleep(3)
@@ -37,10 +34,7 @@ def bypass_cataloged_antibot(driver, timeout=30):
 
 
 def bypass_cloudflare_humanity(driver, timeout=30):
-    """
-    Механизм обхода для Magazinnoff (Cloudflare / DDoS-Guard):
-    Ждет исчезновения заглушек "Just a moment" / "Checking your browser".
-    """
+    """Magazinnoff: ждёт, пока уйдёт заглушка Cloudflare / DDoS-Guard."""
     try:
         WebDriverWait(driver, timeout).until(
             lambda d: "Just a moment" not in d.title and 
@@ -58,18 +52,13 @@ def bypass_cloudflare_humanity(driver, timeout=30):
     
 
 def bypass_pyaterochka_antibot(driver, timeout=45):
-    """
-    Механизм обхода капчи для пятерочки
-    """
     try:
-        # Ждем первоначальную загрузку страницы
         WebDriverWait(driver, 5).until(lambda d: d.execute_script('return document.readyState') == 'complete')
         time.sleep(2)
         
         page_source = driver.page_source.lower()
         title = driver.title.lower()
 
-        # Проверяем наличие признаков капчи в заголовке и исходном коде страницы
         if "робот" in page_source or "just a moment" in title or "cloudflare" in page_source or "challenge" in page_source:
             print("   ! Пятерочка: Обнаружена капча. Выполняю автоматический обход...")
 

@@ -9,6 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from parsers_core.settings import smart_sleep
 
 try:
     import google.generativeai as genai
@@ -19,12 +20,6 @@ GEMINI_API_KEY = "AIzaSyBoD0ClB3JHWf3nFcD_AUTkXQY65ICcAU8"
 
 _cached_pdf_url = None
 _cached_catalog_products = None
-
-def smart_sleep(driver, fallback=2.0):
-    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
-        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
-    else:
-        time.sleep(fallback)
 
 def check_and_bypass_waf(driver, shop_name):
     return True
@@ -66,7 +61,7 @@ def get_pdf_url(driver, shop_name):
                 print(f"[{shop_name}] Найден PDF в API: {pdf_link}")
                 _cached_pdf_url = pdf_link
                 return pdf_link
-        except:
+        except Exception:
             pass
 
     try:
@@ -81,7 +76,7 @@ def get_pdf_url(driver, shop_name):
             print(f"[{shop_name}] Найден PDF в HTML: {pdf_link}")
             _cached_pdf_url = pdf_link
             return pdf_link
-    except:
+    except Exception:
         pass
 
     print(f"[{shop_name}] Ссылка на PDF не найдена на странице.")
@@ -91,7 +86,7 @@ def get_product_links(driver, query, shop_name):
     pdf_url = get_pdf_url(driver, shop_name)
     if pdf_url:
         encoded_query = urllib.parse.quote(query)
-        return [f"{pdf_url}
+        return [f"{pdf_url}#query={encoded_query}"]
     return []
 
 def download_pdf(driver, pdf_url, save_path, shop_name):
@@ -204,7 +199,7 @@ def extract_products_fallback(text):
                         "volume": "",
                         "weight": ""
                     })
-            except:
+            except Exception:
                 pass
     return results
 
@@ -212,7 +207,7 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
     global _cached_catalog_products
     results = []
     
-    hash_idx = product_url.find('
+    hash_idx = product_url.find('#query=')
     query = ""
     pdf_url = product_url
     if hash_idx != -1:

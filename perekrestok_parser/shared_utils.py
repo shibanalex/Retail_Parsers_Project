@@ -9,7 +9,6 @@ from urllib.parse import urlsplit, urlparse
 
 
 def _shared_get_cache_dir(name: str, env_override_key: str = None) -> Path:
-    """Создает и возвращает путь к папке кэша."""
     if env_override_key:
         env_path = os.getenv(env_override_key)
         if env_path:
@@ -95,13 +94,7 @@ def _shared_is_forbidden_ban(html: str) -> bool:
 
 
 def _shared_parse_proxy(proxy_str: str | None) -> dict | None:
-    """
-    Умный парсер прокси. Понимает форматы:
-    - http://ip:port
-    - http://user:pass@ip:port
-    - ip:port
-    - ip:port:user:pass (формат из текстовых файлов)
-    """
+    """Прокси в форматах http://user:pass@ip:port, ip:port, ip:port:user:pass."""
     if not proxy_str:
         return None
 
@@ -135,13 +128,13 @@ def _shared_parse_proxy(proxy_str: str | None) -> dict | None:
 
 
 def _shared_ensure_proxy_auth_extension(proxy_info: dict, cache_dir: Path, ext_name: str) -> Path:
-    """Создает Chrome Extension для авторизации."""
+    """Расширение Chrome с логином/паролем прокси."""
     ext_dir = cache_dir / ext_name
 
     if ext_dir.exists():
         try:
             shutil.rmtree(ext_dir)
-        except:
+        except Exception:
             pass
 
     ext_dir.mkdir(parents=True, exist_ok=True)

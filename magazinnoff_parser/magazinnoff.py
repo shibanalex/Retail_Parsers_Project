@@ -6,7 +6,12 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from magazinoff_pkg.collector import run_collection
 
-def main(shop_name="Magazinnoff"):
+SITE_URL = "https://magazinnoff.ru/"
+
+
+def main(shop_name=None):
+    from parsers_core.names import retail_name
+    shop_name = shop_name or retail_name(SITE_URL)
     try:
         all_data = run_collection(shop_name)
         return all_data

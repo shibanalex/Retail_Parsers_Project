@@ -2,6 +2,7 @@ import time
 import random
 import re
 import urllib.parse
+from parsers_core.settings import smart_sleep
 
 
 MAX_PRODUCTS_PER_QUERY = 100 
@@ -17,12 +18,6 @@ WB_CITY_DEST = {
     "екатеринбург": "-1221151",
     "краснодар": "-1221148"
 }
-
-def smart_sleep(driver, fallback=2.0):
-    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
-        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
-    else:
-        time.sleep(fallback)
 
 def check_and_bypass_waf(driver, shop_name):
     return True
@@ -82,12 +77,10 @@ def extract_volume_weight_from_name(name):
     weight, volume = "", ""
     txt_lower = name.lower()
     
-    
     w_m = re.search(r'(\d+[.,]?\d*)\s*(г|кг)\b', txt_lower)
     if w_m:
         weight = w_m.group(0)
         
-    
     v_m = re.search(r'(\d+[.,]?\d*)\s*(мл|л)\b', txt_lower)
     if v_m:
         volume = v_m.group(0)
@@ -204,7 +197,6 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
     weight = ""
     gtin = ""
     
-    
     resp = safe_get(session, info_url, shop_name, max_retries=2)
     if resp:
         try:
@@ -229,7 +221,6 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
         except Exception:
             pass
 
-    
     fallback_vol, fallback_wt = extract_volume_weight_from_name(c["name"])
     if not volume:
         volume = fallback_vol

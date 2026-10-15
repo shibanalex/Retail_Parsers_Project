@@ -225,4 +225,6 @@ shops = {
     936: "Spb, ул Коллонтай, д 3 литер а",
 }
 
-retail_name = "Перекресток"
+from parsers_core.names import retail_name as _retail_name
+
+retail_name = _retail_name("https://perekrestok.ru/")

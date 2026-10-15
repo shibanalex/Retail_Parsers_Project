@@ -14,6 +14,37 @@ if _OCR_CFG:
     pytesseract.pytesseract.tesseract_cmd = _OCR_CFG["cmd"]
     os.environ["TESSDATA_PREFIX"] = _OCR_CFG["tessdata"]
 
+class _NoWindowSubprocess:
+    """subprocess для pytesseract, где каждый запуск tesseract идёт с CREATE_NO_WINDOW.
+
+    Иначе из процесса без консоли (параллельный разбор) Windows открывает консоль на каждый запуск,
+    а Windows Terminal показывает её вкладкой. SW_HIDE в pytesseract он игнорирует, а проверка
+    версии и списка языков запускает tesseract вообще без флагов.
+    """
+
+    def __init__(self, real):
+        self._real = real
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def _flags(self, kwargs):
+        kwargs["creationflags"] = kwargs.get("creationflags", 0) | 0x08000000
+        return kwargs
+
+    def Popen(self, *args, **kwargs):
+        return self._real.Popen(*args, **self._flags(kwargs))
+
+    def run(self, *args, **kwargs):
+        return self._real.run(*args, **self._flags(kwargs))
+
+    def check_output(self, *args, **kwargs):
+        return self._real.check_output(*args, **self._flags(kwargs))
+
+
+if os.name == "nt" and not isinstance(pytesseract.pytesseract.subprocess, _NoWindowSubprocess):
+    pytesseract.pytesseract.subprocess = _NoWindowSubprocess(pytesseract.pytesseract.subprocess)
+
 
 def collect_images(source):
     if isinstance(source, (list, tuple)):

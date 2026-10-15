@@ -5,20 +5,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import config
 from parsers_core.utils import update_retail_points
+from parsers_core.names import retail_name
 
 
 from .browser import get_browser
 from .megamarket_utils import set_city, get_product_links, parse_product, check_and_bypass_waf
 
-class MegamarketParserWrapper:
-    def __init__(self, shop_name="Мегамаркет"):
-        self.shop_name = shop_name
-        self.retail_name = "Мегамаркет"
-
-    def main(self):
-        return get_all_data(self.shop_name, self.retail_name)
-
-def get_all_data(shop_name="Мегамаркет", retail_name="Мегамаркет"):
+def get_all_data(shop_name):
     driver = get_browser("MEGAMARKET")
     all_data = []
 
@@ -58,7 +51,7 @@ def get_all_data(shop_name="Мегамаркет", retail_name="Мегамарк
                     items = parse_product(
                         driver=driver,
                         product_url=link,
-                        retail_name=retail_name,
+                        retail_name=shop_name,
                         city_name=actual_city_name,
                         shop_name=shop_name
                     )
@@ -80,10 +73,11 @@ def get_all_data(shop_name="Мегамаркет", retail_name="Мегамарк
 
     return all_data
 
-def main(shop_name="Мегамаркет"):
-    return get_all_data(shop_name, shop_name)
+SITE_URL = "https://megamarket.ru/"
 
-megamarket = MegamarketParserWrapper(shop_name="Мегамаркет")
+
+def main(shop_name=None):
+    return get_all_data(shop_name or retail_name(SITE_URL))
 
 if __name__ == "__main__":
     main()

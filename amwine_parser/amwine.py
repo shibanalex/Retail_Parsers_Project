@@ -2,13 +2,15 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from config import cities, search_req
+import config
+cities = getattr(config, "cities", [])
+search_req = getattr(config, "search_req", [])
 from parsers_core.utils import update_retail_points
+from parsers_core.names import retail_name
 from .browser import get_browser
 from .amwine_utils import select_shop, get_product_links, parse_product
 
 def get_all_data(shop_name):
-    # Указываем секцию для парсера
     driver = get_browser("AMWINE")
     all_data = []
 
@@ -65,8 +67,11 @@ def get_all_data(shop_name):
 
     return all_data
 
-def main(shop_name="Ароматный Мир"):
-    return get_all_data(shop_name)
+SITE_URL = "https://amwine.ru/"
+
+
+def main(shop_name=None):
+    return get_all_data(shop_name or retail_name(SITE_URL))
 
 if __name__ == "__main__":
     main()

@@ -3,7 +3,7 @@ import os
 import sys
 from datetime import datetime
 
-from wildberries_parser import wildberries
+# from wildberries_parser import wildberries
 
 
 sys.path.append(r'C:\Users\Fuad\AppData\Roaming\Python\Python313\site-packages')
@@ -44,14 +44,14 @@ uc.Chrome.__del__ = _patched_del
 # from magazinnoff_parser import magazinnoff
 #from cataloged_parser import cataloged
 # from vkusvill_parser import vkusvill
-from yarche_parser import yarche
-from vprok_parser import vprok
+# from yarche_parser import yarche
+# from vprok_parser import vprok
 # from azbuka_vkusa_parser import av
 #from tvoydom_parser import tvoydom
 # from alkoteka_parser import alkoteka
 # from simplewine_parser import simplewine
 from winelab_parser import winelab
-from winestyle_parser import winestyle
+# from winestyle_parser import winestyle
 # from winestreet_parser import winestreet
 # from amwine_parser import amwine
 # from letu_parser import letu
@@ -104,14 +104,14 @@ parsers_funcs = {
 #   "https://magazinnoff.ru/": magazinnoff,
 #   "https://cataloged.ru/": cataloged,
 #    "https://vkusvill.ru/": vkusvill,
-    "https://yarcheplus.ru/": yarche,
-    "https://www.vprok.ru/": vprok,
+    # "https://yarcheplus.ru/": yarche,
+    # "https://www.vprok.ru/": vprok,
     # "https://av.ru/": av,
 #    "https://tvoydom.ru/": tvoydom,
     # "https://alkoteka.com/": alkoteka,
 #    "https://simplewine.ru/": simplewine,
     "https://www.winelab.ru/": winelab,
-    "https://winestyle.ru/": winestyle,
+    # "https://winestyle.ru/": winestyle,
     # "https://winestreet.ru/": winestreet,
     # "https://amwine.ru/": amwine,
     # "https://www.letu.ru/": letu

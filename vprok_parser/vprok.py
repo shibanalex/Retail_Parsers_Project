@@ -8,7 +8,10 @@ sys.path.insert(0, os.path.abspath(
 import time
 
 import config
+from parsers_core.settings import smart_sleep
+from parsers_core.uc_browser import wait_for as _wait_for, wait_ready as _wait_ready
 from parsers_core.utils import update_retail_points
+from parsers_core.names import retail_name
 from . import vprok_utils
 from .browser import get_browser
 from .vprok_utils import (
@@ -18,24 +21,21 @@ from .vprok_utils import (
     capture_status,
     is_served_city,
     to_row,
-    smart_sleep,
     dump_debug,
-    _wait_ready,
-    _wait_for,
     BASE_URL,
 )
 
 DEBUG_DIR = os.path.join(os.path.dirname(__file__), "debug_dump")
 
-_URL = "https://www.vprok.ru/"
-RETAIL = getattr(config, "parsers", {}).get(_URL, "Впрок")
+SITE_URL = "https://www.vprok.ru/"
 LAST_HTTP_STATUS = None
 MAX_PAGES = 10
 _TILE_SELECTOR = "[class*='UiProductTileMain_root']"
 
 
-def get_all_data(shop_name=RETAIL):
+def get_all_data(shop_name=None):
     global LAST_HTTP_STATUS
+    shop_name = shop_name or retail_name(SITE_URL)
     from parsers_core.exceptions import NoShopsError
 
     cities = getattr(config, "cities", [])

@@ -9,6 +9,7 @@ import requests
 
 import config
 from parsers_core.utils import update_retail_points
+from parsers_core.names import retail_name
 from . import yarche_utils
 from .yarche_utils import (
     bootstrap_token,
@@ -21,13 +22,13 @@ from .yarche_utils import (
 
 DEBUG_DIR = os.path.join(os.path.dirname(__file__), "debug_dump")
 
-_URL = "https://yarcheplus.ru/"
-RETAIL = getattr(config, "parsers", {}).get(_URL, "Ярче!")
+SITE_URL = "https://yarcheplus.ru/"
 LAST_HTTP_STATUS = None
 
 
-def get_all_data(shop_name=RETAIL, proxy=None):
+def get_all_data(shop_name=None, proxy=None):
     global LAST_HTTP_STATUS
+    shop_name = shop_name or retail_name(SITE_URL)
     from parsers_core.exceptions import NoShopsError
 
     cities = getattr(config, "cities", [])

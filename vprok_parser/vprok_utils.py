@@ -1,29 +1,19 @@
 # -*- coding: utf-8 -*-
 import json
-import os
-import random
 import re
-import time
 
 from bs4 import BeautifulSoup
+
+from parsers_core.debug_dump import dump_debug
+from parsers_core.normalize import split_name_measure, split_regular_promo
+from parsers_core.rows import make_row
 
 BASE_URL = "https://www.vprok.ru"
 LAST_HTTP_STATUS = None
 
 
-def dump_debug(debug_dir, label, text):
-    if not debug_dir:
-        return
-    os.makedirs(debug_dir, exist_ok=True)
-    path = os.path.join(debug_dir, f"{label}.html")
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text or "")
-    except Exception:
-        pass
-
-
 def capture_status(driver):
+    """Настоящий HTTP-код страницы из лога сети браузера."""
     global LAST_HTTP_STATUS
     try:
         logs = driver.get_log("performance")
@@ -85,34 +75,6 @@ def check_page(html):
         raise RuntimeError(f"Ошибка {code}")
 
 
-def _wait_ready(driver, timeout=15):
-    from selenium.webdriver.support.ui import WebDriverWait
-    try:
-        WebDriverWait(driver, timeout).until(
-            lambda d: d.execute_script("return document.readyState") == "complete"
-        )
-    except Exception:
-        pass
-
-
-def _wait_for(driver, selector, timeout=10):
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.support import expected_conditions as EC
-    from selenium.webdriver.support.ui import WebDriverWait
-    try:
-        WebDriverWait(driver, timeout).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-        )
-    except Exception:
-        pass
-
-
-def smart_sleep(driver):
-    lo = getattr(driver, "custom_min_delay", 1.0)
-    hi = getattr(driver, "custom_max_delay", 3.0)
-    time.sleep(random.uniform(lo, hi))
-
-
 def _class_has(tag, needle):
     cls = tag.get("class") or []
     return any(needle in c for c in cls)
@@ -142,23 +104,6 @@ def _extract_price(span):
     if frac_digits:
         return float(f"{rubles}.{frac_digits}")
     return float(rubles)
-
-
-_VOL_RE = re.compile(r'(\d+[.,]?\d*)\s*(мл|л|кг|г)(?![а-яёa-z])', re.IGNORECASE)
-
-
-def split_name_measure(name):
-    name = name or ""
-    m = _VOL_RE.search(name)
-    if not m:
-        return re.sub(r'\s{2,}', ' ', name).strip(" ,;"), "", ""
-    value = m.group(1).replace(",", ".")
-    unit = m.group(2).lower()
-    clean = (name[:m.start()] + " " + name[m.end():])
-    clean = re.sub(r'\s{2,}', ' ', clean).strip(" ,;")
-    if unit in ("л", "мл"):
-        return clean, f"{value} {unit}", ""
-    return clean, "", f"{value} {unit}"
 
 
 def _extract_id(href):
@@ -213,30 +158,11 @@ def parse_search_page(html):
 
 
 def to_row(product, shop_name, city):
-    current_price = product.get("price")
-    old_price = product.get("old_price")
-    if current_price is None:
-        return None
-    if old_price is not None and old_price > current_price:
-        regular_price, promo_price = old_price, current_price
-    else:
-        regular_price, promo_price = current_price, 0
-
-    clean_name, volume, weight = split_name_measure(product.get("name") or "")
-
-    return {
-        "Сеть": shop_name,
-        "Тип магазина": "Доставка",
-        "Адрес Торговой точки": city,
-        "Бренд": product.get("brand") or "",
-        "Название продукта": clean_name,
-        "Цена": float(regular_price),
-        "Фото товара": product.get("photo") or "",
-        "Ссылка на страницу": product.get("url") or "",
-        "Объем": volume,
-        "Вес": weight,
-        "Остаток": "1",
-        "Категория": "",
-        "Цена по акции": float(promo_price),
-        "Рейтинг": float(product.get("rating") or 0),
-    }
+    regular, promo = split_regular_promo(product.get("price"), product.get("old_price"))
+    name, volume, weight = split_name_measure(product.get("name"))
+    return make_row(
+        shop_name, city, name, regular,
+        store_type="Доставка", brand=product.get("brand"), promo_price=promo,
+        photo=product.get("photo"), url=product.get("url"), rating=product.get("rating"),
+        volume=volume, weight=weight, stock="1",
+    )

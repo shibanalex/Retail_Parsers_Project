@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
-import configparser
-import os
-import random
-import re
 import time
 
 import requests
 from bs4 import BeautifulSoup
+
+from parsers_core.categories import city_in, is_alcohol_query
+from parsers_core.debug_dump import dump_debug
+from parsers_core.normalize import split_name_measure, to_price
+from parsers_core.rows import make_row
+from parsers_core.settings import smart_sleep as _core_sleep
 
 BASE_URL = "https://winestyle.ru"
 LAST_HTTP_STATUS = None
@@ -36,23 +38,8 @@ CATEGORY_MAP = {
 
 
 def category_slug(query):
+    """Поиск сайта отдаёт ~15 позиций без пагинации, поэтому добираем страницей категории."""
     return CATEGORY_MAP.get((query or "").strip().lower())
-
-
-ALCOHOL_KEYWORDS = {
-    "вино", "винн", "виски", "водка", "коньяк", "бренди", "ром", "джин",
-    "текила", "пиво", "сидр", "шампанск", "игрист", "ликер", "ликёр",
-    "вермут", "абсент", "портвейн", "херес", "саке", "мескаль", "глинтвейн",
-    "каберне", "мерло", "шардоне", "совиньон", "рислинг", "пино",
-    "мускат", "санджовезе", "темпранильо", "мальбек", "шираз", "сира",
-    "зинфандель", "неббиоло", "грюнер", "просекко", "кава", "граппа",
-    "перно", "чинзано", "мартини", "джек дэниэлс", "абсолют",
-}
-
-
-def is_alcohol_query(query):
-    q = (query or "").strip().lower()
-    return any(k in q for k in ALCOHOL_KEYWORDS)
 
 
 KNOWN_CITIES = {
@@ -66,32 +53,12 @@ KNOWN_CITIES = {
 
 
 def is_served_city(city):
-    name = (city or "").strip().lower()
-    return any(name in known or known in name for known in KNOWN_CITIES)
-
-
-def _read_delays(section="WINESTYLE"):
-    cfg_path = os.path.join(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))), "parsers_core", "share_parsers.cfg")
-    min_delay, max_delay = 1.0, 3.0
-    if os.path.exists(cfg_path):
-        cp = configparser.ConfigParser()
-        try:
-            cp.read(cfg_path, encoding="utf-8")
-            if cp.has_section("BROWSER"):
-                min_delay = cp.getfloat("BROWSER", "min_delay", fallback=min_delay)
-                max_delay = cp.getfloat("BROWSER", "max_delay", fallback=max_delay)
-            if cp.has_section(section):
-                min_delay = cp.getfloat(section, "min_delay", fallback=min_delay)
-                max_delay = cp.getfloat(section, "max_delay", fallback=max_delay)
-        except Exception:
-            pass
-    return min_delay, max_delay
+    """Сеть работает только в Москве и области."""
+    return city_in(city, KNOWN_CITIES)
 
 
 def smart_sleep():
-    lo, hi = _read_delays()
-    time.sleep(random.uniform(lo, hi))
+    _core_sleep(section="WINESTYLE")
 
 
 def bootstrap_session():
@@ -133,44 +100,8 @@ def fetch(session, url):
     return r
 
 
-def dump_debug(debug_dir, label, text):
-    if not debug_dir:
-        return
-    os.makedirs(debug_dir, exist_ok=True)
-    path = os.path.join(debug_dir, f"{label}.html")
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text or "")
-    except Exception:
-        pass
-
-
-_VOL_RE = re.compile(r'(\d+[.,]?\d*)\s*(мл|л|кг|г)(?![а-яёa-z])', re.IGNORECASE)
-
-
-def split_name_measure(name):
-    name = name or ""
-    m = _VOL_RE.search(name)
-    if not m:
-        return re.sub(r'\s{2,}', ' ', name).strip(" ,;"), "", ""
-    value = m.group(1).replace(",", ".")
-    unit = m.group(2).lower()
-    clean = (name[:m.start()] + " " + name[m.end():])
-    clean = re.sub(r'\s{2,}', ' ', clean).strip(" ,;")
-    if unit in ("л", "мл"):
-        return clean, f"{value} {unit}", ""
-    return clean, "", f"{value} {unit}"
-
-
 def _to_float(text):
-    if not text:
-        return None
-    cleaned = text.replace("\xa0", "").replace(" ", "").replace("₽", "").strip()
-    cleaned = cleaned.replace(",", ".")
-    try:
-        return float(cleaned)
-    except ValueError:
-        return None
+    return to_price(text)
 
 
 def _parse_price(card):
@@ -258,24 +189,10 @@ def parse_cards(html):
 
 
 def to_row(product, shop_name, city):
-    regular = product.get("regular_price")
-    if regular is None:
-        return None
-    promo = product.get("promo_price")
-    clean_name, volume, weight = split_name_measure(product.get("name") or "")
-    return {
-        "Сеть": shop_name,
-        "Тип магазина": "Магазин",
-        "Адрес Торговой точки": city,
-        "Бренд": product.get("brand") or "",
-        "Название продукта": clean_name,
-        "Цена": float(regular),
-        "Фото товара": product.get("photo") or "",
-        "Ссылка на страницу": product.get("url") or "",
-        "Объем": volume,
-        "Вес": weight,
-        "Остаток": "1",
-        "Категория": "",
-        "Цена по акции": float(promo) if promo is not None else 0.0,
-        "Рейтинг": float(product.get("rating") or 0),
-    }
+    name, volume, weight = split_name_measure(product.get("name"))
+    return make_row(
+        shop_name, city, name, product.get("regular_price"),
+        store_type="Магазин", brand=product.get("brand"), promo_price=product.get("promo_price"),
+        photo=product.get("photo"), url=product.get("url"), rating=product.get("rating"),
+        volume=volume, weight=weight, stock="1",
+    )

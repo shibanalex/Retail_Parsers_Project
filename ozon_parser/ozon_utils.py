@@ -3,16 +3,11 @@ import random
 import re
 import urllib.parse
 from bs4 import BeautifulSoup
+from parsers_core.settings import smart_sleep
 
 
 #Переменная количества
 MAX_PRODUCTS_PER_QUERY = 30  
-
-def smart_sleep(driver, fallback=2.0):
-    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
-        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
-    else:
-        time.sleep(fallback)
 
 def check_and_bypass_waf(driver, shop_name):
     page = driver.page
@@ -31,18 +26,18 @@ def check_and_bypass_waf(driver, shop_name):
                         cb.click()
                         print(f"[{shop_name}] Кликнули по чекбоксу Cloudflare.")
                         time.sleep(3)
-                except:
+                except Exception:
                     pass
             else:
                 break
-    except:
+    except Exception:
         pass
     
     try:
         cookie_btn = page.ele('text:Принять', timeout=1) or page.ele('text:ОК', timeout=1)
         if cookie_btn:
             cookie_btn.click()
-    except:
+    except Exception:
         pass
 
     return True
@@ -112,7 +107,7 @@ def get_product_links(driver, query, shop_name):
                 
             try:
                 page.scroll.down(800)
-            except:
+            except Exception:
                 pass
                 
             smart_sleep(driver, 2.0)
@@ -130,7 +125,7 @@ def clean_price(price_str):
     cleaned = re.sub(r'[^\d.,]', '', price_str.replace(',', '.'))
     try:
         return float(cleaned.rstrip('.'))
-    except:
+    except Exception:
         return 0.0
 
 def parse_product(driver, product_url, retail_name, city_name, shop_name):
@@ -143,19 +138,19 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
         
         try:
             page.wait.ele_displayed('tag:h1', timeout=10)
-        except:
+        except Exception:
             pass
             
         try:
             btn = page.ele('text:Перейти к описанию', timeout=1) or page.ele('text:Все характеристики', timeout=1)
             if btn: btn.click()
-        except:
+        except Exception:
             pass
             
         try:
             page.scroll.down(1200)
             smart_sleep(driver, 1.5)
-        except:
+        except Exception:
             pass
 
         soup = BeautifulSoup(page.html, 'html.parser')
@@ -249,7 +244,7 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
                 try:
                     rating = float(match.group(1).replace(',', '.'))
                     reviews = int(re.sub(r'[^\d]', '', match.group(2)))
-                except:
+                except Exception:
                     pass
 
         stock_int = 1
@@ -265,7 +260,7 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
                     num_str = re.sub(r'\D', '', stock_match.group(1))
                     if num_str:
                         stock_int = int(num_str)
-                except:
+                except Exception:
                     pass
 
         results.append({

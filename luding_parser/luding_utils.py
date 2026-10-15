@@ -5,14 +5,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
+from parsers_core.settings import smart_sleep
 
 MAX_PRODUCTS_PER_QUERY = 100
-
-
-def smart_sleep(driver, fallback=1.5):
-    min_d = getattr(driver, "custom_min_delay", fallback)
-    max_d = getattr(driver, "custom_max_delay", fallback + 1.0)
-    time.sleep(random.uniform(min_d, max_d))
 
 
 def clean_price(price_val):
@@ -110,7 +105,6 @@ def get_product_links(driver, query, shop_name):
         search_input.send_keys(query)
         smart_sleep(driver, 0.5)
 
-        
         search_btns = driver.find_elements(By.CSS_SELECTOR, "button.search-button.search__button")
         if not search_btns:
             search_btns = driver.find_elements(By.XPATH, "//button[contains(text(), 'Найти') or contains(@class, 'search__button')]")
@@ -241,7 +235,6 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
         elif promo_elems:
             main_base_price = clean_price(promo_elems[0].text)
 
-        
         shops_parsed = []
         where_buy_btns = driver.find_elements(By.XPATH, "//button[@data-detail-where-buy-bound='1' or contains(text(), 'Где купить')]")
         if not where_buy_btns:

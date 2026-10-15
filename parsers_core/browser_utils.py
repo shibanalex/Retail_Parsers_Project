@@ -196,8 +196,7 @@ chrome.webRequest.onAuthRequired.addListener(
 
 
 def _detect_chrome_version_win(chrome_binary: Optional[str]) -> Optional[int]:
-    """Определение версии Chrome на Windows через реестр и file version."""
-    # 1) Реестр — самый надёжный способ
+    """Версия Chrome на Windows: реестр, иначе версия файла."""
     reg_keys = [
         r"HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon",
         r"HKEY_LOCAL_MACHINE\Software\Google\Chrome\BLBeacon",
@@ -217,7 +216,6 @@ def _detect_chrome_version_win(chrome_binary: Optional[str]) -> Optional[int]:
         except Exception:
             continue
 
-    # 2) File version через PowerShell
     if chrome_binary:
         ps_cmd = (
             f'(Get-Item "{chrome_binary}").VersionInfo.FileVersion'
@@ -249,7 +247,7 @@ def detect_chrome_version_main(
             except ValueError:
                 return None
 
-    # Windows: chrome.exe --version не работает, используем реестр/powershell
+    # На Windows chrome.exe --version ничего не печатает
     if sys.platform == "win32":
         return _detect_chrome_version_win(chrome_binary)
 
@@ -281,11 +279,7 @@ def detect_chrome_version_main(
 
 
 def is_forbidden_ban(html: str) -> bool:
-    """Моментальное определение CDN/Akamai Forbidden-бана по HTML.
-
-    Страница-бан содержит «Forbidden» + «if you are not a bot» или «origin:».
-    Такой бан не решается капчей — нужно менять прокси.
-    """
+    """Бан CDN (Forbidden + 'if you are not a bot' / 'origin:'). Капча не поможет, нужен другой прокси."""
     if not html:
         return False
     lowered = html.lower()

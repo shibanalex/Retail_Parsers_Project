@@ -12,3 +12,4 @@ pytesseract
 pypdf
 fonttools
 pypdfium2
+opencv-python-headless

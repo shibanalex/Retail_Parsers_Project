@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
-import configparser
 import json
-import os
-import random
 import re
 import time
 from urllib.parse import urlparse, parse_qs, urlencode
@@ -10,23 +7,14 @@ from urllib.parse import urlparse, parse_qs, urlencode
 import requests
 from bs4 import BeautifulSoup
 
+from parsers_core.categories import city_in, is_alcohol_query
+from parsers_core.debug_dump import dump_debug
+from parsers_core.normalize import split_name_measure, split_regular_promo, to_price
+from parsers_core.rows import make_row
+from parsers_core.settings import smart_sleep as _core_sleep
+
 BASE_URL = "https://www.winelab.ru"
 LAST_HTTP_STATUS = None
-
-ALCOHOL_KEYWORDS = {
-    "вино", "винн", "виски", "водка", "коньяк", "бренди", "ром", "джин",
-    "текила", "пиво", "сидр", "шампанск", "игрист", "ликер", "ликёр",
-    "вермут", "абсент", "портвейн", "херес", "саке", "мескаль", "глинтвейн",
-    "каберне", "мерло", "шардоне", "совиньон", "рислинг", "пино",
-    "мускат", "санджовезе", "темпранильо", "мальбек", "шираз", "сира",
-    "зинфандель", "неббиоло", "грюнер", "просекко", "кава", "граппа",
-    "перно", "чинзано", "мартини", "джек дэниэлс", "абсолют",
-}
-
-
-def is_alcohol_query(query):
-    q = (query or "").strip().lower()
-    return any(k in q for k in ALCOHOL_KEYWORDS)
 
 KNOWN_CITIES = {
     "москва", "зеленоград", "балашиха", "видное", "долгопрудный", "домодедово",
@@ -63,32 +51,11 @@ KNOWN_CITIES = {
 
 
 def is_served_city(city):
-    name = (city or "").strip().lower()
-    return any(name in known or known in name for known in KNOWN_CITIES)
-
-
-def _read_delays(section="WINELAB"):
-    cfg_path = os.path.join(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))), "parsers_core", "share_parsers.cfg")
-    min_delay, max_delay = 1.0, 3.0
-    if os.path.exists(cfg_path):
-        cp = configparser.ConfigParser()
-        try:
-            cp.read(cfg_path, encoding="utf-8")
-            if cp.has_section("BROWSER"):
-                min_delay = cp.getfloat("BROWSER", "min_delay", fallback=min_delay)
-                max_delay = cp.getfloat("BROWSER", "max_delay", fallback=max_delay)
-            if cp.has_section(section):
-                min_delay = cp.getfloat(section, "min_delay", fallback=min_delay)
-                max_delay = cp.getfloat(section, "max_delay", fallback=max_delay)
-        except Exception:
-            pass
-    return min_delay, max_delay
+    return city_in(city, KNOWN_CITIES)
 
 
 def smart_sleep():
-    lo, hi = _read_delays()
-    time.sleep(random.uniform(lo, hi))
+    _core_sleep(section="WINELAB")
 
 
 def _request(session, method, url, **kw):
@@ -129,25 +96,7 @@ def _next_url(current_url, next_page_url):
 
 def _parse_old_price(card):
     el = card.select_one(".product-price--old")
-    if not el:
-        return None
-    text = el.get_text().replace("\xa0", "").replace(" ", "").replace("₽", "").strip()
-    try:
-        return float(text)
-    except ValueError:
-        return None
-
-
-def dump_debug(debug_dir, label, text):
-    if not debug_dir:
-        return
-    os.makedirs(debug_dir, exist_ok=True)
-    path = os.path.join(debug_dir, f"{label}.html")
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text or "")
-    except Exception:
-        pass
+    return to_price(el.get_text()) if el else None
 
 
 def search_products(session, query_text, max_pages=10, debug_dir=None):
@@ -216,9 +165,10 @@ def is_blocked_page(html):
 
 
 def fetch_product_detail_browser(driver, url):
-    from .browser import _wait_ready
+    """Карточку товара берём только браузером: requests с теми же cookies получает 401."""
+    from parsers_core.uc_browser import wait_ready
     driver.get(url)
-    _wait_ready(driver)
+    wait_ready(driver)
     time.sleep(1)
     html = driver.page_source
     if is_blocked_page(html):
@@ -226,43 +176,16 @@ def fetch_product_detail_browser(driver, url):
     return _extract_ld_json(html)
 
 
-_VOL_RE = re.compile(r'(\d+[.,]?\d*)\s*(мл|л|кг|г)(?![а-яёa-z])', re.IGNORECASE)
-
-
-def split_name_measure(name):
-    name = name or ""
-    m = _VOL_RE.search(name)
-    if not m:
-        return re.sub(r'\s{2,}', ' ', name).strip(" ,;"), "", ""
-    value = m.group(1).replace(",", ".")
-    unit = m.group(2).lower()
-    clean = (name[:m.start()] + " " + name[m.end():])
-    clean = re.sub(r'\s{2,}', ' ', clean).strip(" ,;")
-    if unit in ("л", "мл"):
-        return clean, f"{value} {unit}", ""
-    return clean, "", f"{value} {unit}"
-
-
 def to_row(card, detail, shop_name, city):
     detail = detail or {}
     offers = detail.get("offers") or {}
 
-    try:
-        current_price = float(offers.get("price"))
-    except (TypeError, ValueError):
-        try:
-            current_price = float(card.get("price"))
-        except (TypeError, ValueError):
-            return None
+    current_price = to_price(offers.get("price")) or to_price(card.get("price"))
+    if current_price is None:
+        return None
+    regular_price, promo_price = split_regular_promo(current_price, card.get("old_price"))
 
-    old_price = card.get("old_price")
-    if old_price is not None and old_price > current_price:
-        regular_price, promo_price = old_price, current_price
-    else:
-        regular_price, promo_price = current_price, 0
-
-    raw_name = detail.get("name") or card.get("name") or ""
-    name, volume, weight = split_name_measure(raw_name)
+    name, volume, weight = split_name_measure(detail.get("name") or card.get("name"))
 
     brand = detail.get("brand") or ""
     if isinstance(brand, dict):
@@ -278,22 +201,12 @@ def to_row(card, detail, shop_name, city):
     except (TypeError, ValueError):
         rating = 0.0
 
-    availability = offers.get("availability") or ""
-    in_stock = availability.endswith("InStock")
+    in_stock = (offers.get("availability") or "").endswith("InStock")
 
-    return {
-        "Сеть": shop_name,
-        "Тип магазина": "Магазин",
-        "Адрес Торговой точки": city,
-        "Бренд": brand,
-        "Название продукта": name,
-        "Цена": float(regular_price),
-        "Фото товара": detail.get("image") or "",
-        "Ссылка на страницу": card.get("url") or offers.get("url") or "",
-        "Объем": volume,
-        "Вес": weight,
-        "Остаток": "1" if in_stock else "0",
-        "Категория": card.get("category") or "",
-        "Цена по акции": float(promo_price),
-        "Рейтинг": rating if review_count else 0.0,
-    }
+    return make_row(
+        shop_name, city, name, regular_price,
+        store_type="Магазин", brand=brand, promo_price=promo_price,
+        photo=detail.get("image"), url=card.get("url") or offers.get("url"),
+        rating=rating if review_count else 0.0, volume=volume, weight=weight,
+        stock=in_stock, category=card.get("category"),
+    )

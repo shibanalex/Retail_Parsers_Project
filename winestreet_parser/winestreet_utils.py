@@ -7,12 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-
-def smart_sleep(driver, fallback=2.0):
-    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
-        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
-    else:
-        time.sleep(fallback)
+from parsers_core.settings import smart_sleep
 
 def check_and_bypass_waf(driver, shop_name):
     try:
@@ -32,7 +27,7 @@ def dismiss_city_popup(driver):
         )
         driver.execute_script("arguments[0].click();", confirm_btn)
         time.sleep(1)
-    except:
+    except Exception:
         pass
 
 def set_city(driver, city_name, shop_name):
@@ -129,7 +124,7 @@ def clean_price(price_str):
     cleaned = re.sub(r'[^\d.,]', '', str(price_str).replace(',', '.'))
     try:
         return float(cleaned)
-    except:
+    except Exception:
         return 0.0
 
 def parse_product(driver, product_url, retail_name, city_name, shop_name):
@@ -182,7 +177,7 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
             )
             driver.execute_script("arguments[0].click();", store_btn)
             smart_sleep(driver, 2.0)
-        except:
+        except Exception:
             pass
 
         soup_shops = BeautifulSoup(driver.page_source, 'html.parser')

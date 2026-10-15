@@ -12,6 +12,7 @@ except ImportError:
     pass
 
 from parsers_core.utils import update_retail_points
+from parsers_core.names import retail_name
 from .vkusvill_config import VKUSVILL_CITIES_MAP, VKUSVILL_VALID_ADDRESSES
 from .browser import get_browser
 from .vkusvill_utils import set_city_address, filter_dynamic_query, parse_html_to_items, smart_sleep
@@ -100,8 +101,11 @@ def get_all_data(shop_name):
 
     return full_items_data
 
-def main(shop_name="ВкусВилл"):
-    return get_all_data(shop_name)
+SITE_URL = "https://vkusvill.ru/"
+
+
+def main(shop_name=None):
+    return get_all_data(shop_name or retail_name(SITE_URL))
 
 if __name__ == "__main__":
     main()

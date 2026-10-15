@@ -6,12 +6,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from .vkusvill_config import VKUSVILL_VALID_ADDRESSES
-
-def smart_sleep(driver, fallback=2.0):
-    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
-        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
-    else:
-        time.sleep(fallback)
+from parsers_core.settings import smart_sleep
 
 def set_city_address(driver, city_name, shop_name):
     safe_address = VKUSVILL_VALID_ADDRESSES.get(city_name, f"{city_name}, улица Ленина, 1")

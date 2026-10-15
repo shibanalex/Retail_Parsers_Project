@@ -2,6 +2,7 @@ import time
 import random
 import re
 import requests
+from parsers_core.settings import sleep_between as smart_sleep
 
 # Города должны совпадать с апи
 REGION_MAP = {
@@ -25,9 +26,6 @@ def set_city(session, city_name, shop_name):
     if not region_id:
         return 999, None
     return 200, region_id
-
-def smart_sleep(min_val=0.5, max_val=1.5):
-    time.sleep(random.uniform(min_val, max_val))
 
 def get_session():
     session = requests.Session()

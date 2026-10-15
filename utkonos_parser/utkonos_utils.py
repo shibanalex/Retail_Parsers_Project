@@ -2,21 +2,16 @@ import time
 import random
 import re
 import urllib.parse
+from parsers_core.settings import smart_sleep
 
 MAX_PRODUCTS_PER_QUERY = 40
 _cached_catalog_products = {}
-
-def smart_sleep(driver, fallback=2.0):
-    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
-        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
-    else:
-        time.sleep(fallback)
 
 def check_and_bypass_waf(page):
     try:
         if "qrator" in page.title.lower():
             time.sleep(5)
-    except:
+    except Exception:
         pass
 
 def set_city(driver, city_name, shop_name):
@@ -30,17 +25,14 @@ def set_city(driver, city_name, shop_name):
         time.sleep(3.0)
         check_and_bypass_waf(page)
 
-        
         header = page.ele('tag:header', timeout=2)
         if header and city_name.lower() in header.text.lower():
             return 200
 
-        
         addr_btn = page.ele('text:Укажите адрес', timeout=1) or page.ele('css:[class*="address"]', timeout=1) or page.ele('text:Доставка', timeout=1) or page.ele('text:Москва', timeout=1)
         if addr_btn:
             addr_btn.click()
             time.sleep(2.0)
-            
             
             inp = page.ele('tag:input', timeout=2) or page.ele('@placeholder:Введите', timeout=1)
             if inp:
@@ -49,12 +41,10 @@ def set_city(driver, city_name, shop_name):
                 inp.input(f"{city_name}, Ленина, 1")
                 time.sleep(3.0) 
                 
-                
                 sugg = page.ele('css:li', timeout=2) or page.ele('text:Ленина', timeout=1)
                 if sugg:
                     sugg.click()
                     time.sleep(1.5)
-                    
                     
                     submit = page.ele('text:Сохранить', timeout=1) or page.ele('text:Выбрать', timeout=1) or page.ele('text:Подтвердить', timeout=1)
                     if submit:
@@ -79,11 +69,9 @@ def get_product_links(driver, query, shop_name):
         
         page.listen.start('api-gateway/v1/catalog/items')
         
-        
         page.get(search_url)
         check_and_bypass_waf(page)
 
-        
         packet = page.listen.wait(timeout=10)
         
         if packet and packet.response and packet.response.body:
@@ -98,12 +86,10 @@ def get_product_links(driver, query, shop_name):
                 url = f"https://www.utkonos.ru/product/{slug}" if slug else f"https://www.utkonos.ru/item/{item_id}"
                 name = item.get("name") or item.get("title", "Неизвестный товар")
                 
-                
                 price_base = 0.0
                 price_promo = None
                 
                 prices = item.get("prices", {})
-                
                 
                 p_reg = prices.get("priceRegular", 0) / 100.0
                 p_card = prices.get("price", 0) / 100.0
@@ -114,16 +100,13 @@ def get_product_links(driver, query, shop_name):
                 else:
                     price_base = p_reg if p_reg > 0 else p_card
                 
-                
                 photo = ""
                 images = item.get("images", [])
                 if images:
                     img_obj = images[0]
                     photo = img_obj.get("original") or img_obj.get("large") or img_obj.get("medium") or ""
                 
-                
                 stock_int = int(item.get("count", 1))
-                
                 
                 rating_val = None
                 rating_dict = item.get("rating", {})
@@ -132,9 +115,7 @@ def get_product_links(driver, query, shop_name):
                     if rate > 0:
                         rating_val = float(rate)
                     
-                
                 volume, weight = "", ""
-                
                 
                 package = item.get("display", {}).get("package", "")
                 if not package:
@@ -145,7 +126,6 @@ def get_product_links(driver, query, shop_name):
                 elif "г" in package.lower() or "кг" in package.lower():
                     weight = package
 
-                
                 brand = ""
                 brand_match = re.search(r'([A-ZА-ЯA-ZА-Я0-9-]{3,})', name)
                 if brand_match:
@@ -154,7 +134,6 @@ def get_product_links(driver, query, shop_name):
                     if words:
                         brand = " ".join(words)
 
-                
                 _cached_catalog_products[url] = {
                     "Название продукта": name,
                     "Цена": price_base,
@@ -178,12 +157,11 @@ def get_product_links(driver, query, shop_name):
     except Exception as e:
         print(f"[{shop_name}] Ошибка API поиска '{query}': {e}")
         try: page.listen.stop() 
-        except: pass
+        except Exception: pass
         return []
 
 def parse_product(driver, product_url, retail_name, city_name, shop_name):
     global _cached_catalog_products
-    
     
     if product_url in _cached_catalog_products:
         c = _cached_catalog_products[product_url]

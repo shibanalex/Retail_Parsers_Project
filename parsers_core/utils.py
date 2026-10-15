@@ -1,9 +1,3 @@
-# parsers_core/utils.py
-#  ver 4.0  30/01/2026
-#  вариант ./parser_core/util.py
-#  для main.py 3.5  Переделан write_excel (теперь он дописывает а не перезаписывает )
-#  добавлен Общий wrapper для Selenium, и общий блок защиты на случай отсутсвия параметров в config.py
-
 import os
 import re
 import unicodedata
@@ -13,18 +7,15 @@ import gc
 import openpyxl
 from datetime import datetime
 import requests
-#from openpyxl import load_workbook
 import psycopg2
 import sqlite3
 from typing import Optional, Union
 from selenium.common.exceptions import NoSuchWindowException, WebDriverException
 import time
 
-# Импортируем config_loader ОТНОСИТЕЛЬНО
 try:
     from .config_loader import cfg
 except ImportError:
-    # Fallback для обратной совместимости
     try:
         from config_loader import cfg
     except ImportError:
@@ -35,7 +26,7 @@ except ImportError:
 if cfg:
     try:
         emj_agent = cfg.get("", "emoji_agent", "🥷")
-    except:
+    except Exception:
         emj_agent = "🥷"
 else:
     # Fallback если config_loader не загружен
@@ -46,21 +37,15 @@ else:
         emj_agent = "🥷"
 """
 try:
-    # Пробуем импортировать из main
     from main import EMOJI_AGENT
     emj_agent =  EMOJI_AGENT
 except ImportError:
-    # Запасной вариант
     emj_agent = "🥷"
 
 class SeleniumSoftFail(Exception):
     """Мягкая ошибка Selenium (антибот / закрыто окно / CF)"""
     pass
 
-
-# =========================
-# CONSOLE COLORS (ANSI)
-# =========================
 
 ANSI_RESET     = "\x1b[0m"
 
@@ -73,11 +58,7 @@ ANSI_BLACK_BG  = "\x1b[40m"
 
 
 def set_console_mode(color: str) -> None:
-    """
-    Устанавливает режим вывода консоли:
-    цвет текста + чёрный фон.
-    Работает как 'переключатель режима', а не разовая окраска.
-    """
+    """Цвет текста на чёрном фоне, действует до reset_console_mode()."""
     print(color + ANSI_BLACK_BG, end="", flush=True)
 
 
@@ -88,13 +69,7 @@ def reset_console_mode() -> None:
     print(ANSI_RESET, end="", flush=True)
 
 def plural_ru(n: int, one: str, few: str, many: str) -> str:
-    """
-    Русская форма множественного числа.
-    n    — число
-    one  — 1 (парсер)
-    few  — 2-4 (парсера)
-    many — 0, 5+ (парсеров)
-    """
+    """plural_ru(5, 'парсер', 'парсера', 'парсеров') -> 'парсеров'."""
     n = abs(int(n))
 
     if 11 <= n % 100 <= 14:
@@ -108,11 +83,7 @@ def plural_ru(n: int, one: str, few: str, many: str) -> str:
     return many
 
 def safe_open(sb, url: str, tag: str = "", retries: int = 1, sleep_sec: int = 3) -> bool:
-    """
-    Безопасное открытие страницы через SeleniumBase.
-    НЕ падает.
-    Возвращает True / False.
-    """
+    """Открывает страницу. При ошибке возвращает False, не падает."""
 
     for attempt in range(1, retries + 1):
         try:
@@ -145,10 +116,8 @@ def safe_open(sb, url: str, tag: str = "", retries: int = 1, sleep_sec: int = 3)
 
     return False
 
-#import json
 
 def safe_json_resp(resp, where=""):
-    # curl_cffi Response: resp.text обычно есть
     text = getattr(resp, "text", "") or ""
     ct = ""
     try:
@@ -156,11 +125,9 @@ def safe_json_resp(resp, where=""):
     except Exception:
         pass
 
-    # если вообще пусто
     if not text.strip():
         raise RuntimeError(f"{where} empty body | HTTP {resp.status_code} | ct={ct}")
 
-    # если похоже на HTML/текст, а не JSON
     if ("application/json" not in ct) and (not text.lstrip().startswith(("{", "["))):
         head = text[:200].replace("\n", " ")
         raise RuntimeError(f"{where} not-json | HTTP {resp.status_code} | ct={ct} | head={head!r}")
@@ -172,9 +139,7 @@ def safe_json_resp(resp, where=""):
         raise RuntimeError(f"{where} json-parse-failed | HTTP {resp.status_code} | ct={ct} | head={head!r} | err={e}")
 
 def safe_get_cookies(sb, url: str, tag: str = ""):
-    """
-    Универсальный безопасный метод получения cookies.
-    """
+    """Cookies страницы словарём {имя: значение}."""
     ok = safe_open(sb, url, tag=tag, retries=1)
     if not ok:
         return {}
@@ -187,9 +152,7 @@ def safe_get_cookies(sb, url: str, tag: str = ""):
 
 
 def _safe_quit(sb):
-    """
-    Гарантированное закрытие драйвера без исключений.
-    """
+    """Закрывает драйвер, ошибки глушит."""
     try:
         sb.quit()
     except Exception:
@@ -202,28 +165,10 @@ def count_records(
     sheet: Optional[Union[int, str]] = None,
     where: Optional[str] = None
 ) -> int:
-    """
-    Универсально считает количество записей в источнике данных.
-
-    Поддерживаемые источники:
-    - Excel (.xlsx, .xls)
-    - SQLite (.sqlite, .db)
-    - PostgreSQL (DSN / connection string)
-
-    Никаких side-effect'ов. Только чтение.
-
-    :param source_path: путь к файлу или строка подключения
-    :param table: имя таблицы (для БД)
-    :param sheet: имя листа (для Excel)
-    :param where: SQL-условие WHERE (без слова WHERE)
-    :return: количество записей
-    """
+    """Число записей в Excel, SQLite или PostgreSQL (по DSN). where — без слова WHERE."""
 
     source_path = source_path.strip()
 
-    # =====================================================
-    # 1. EXCEL
-    # =====================================================
     if source_path.lower().endswith((".xlsx", ".xls")):
         wb = openpyxl.load_workbook(source_path, read_only=True)
         try:
@@ -237,9 +182,6 @@ def count_records(
         finally:
             wb.close()
 
-    # =====================================================
-    # 2. SQLITE
-    # =====================================================
     if source_path.lower().endswith((".sqlite", ".db")):
         if not os.path.isfile(source_path):
             raise FileNotFoundError(f"SQLite файл не найден: {source_path}")
@@ -262,10 +204,7 @@ def count_records(
         finally:
             conn.close()
 
-    # =====================================================
-    # 3. POSTGRESQL
-    # =====================================================
-    # Всё, что не файл — считаем PostgreSQL
+    # Всё, что не файл — строка подключения PostgreSQL
     if not table:
         raise ValueError("Для PostgreSQL необходимо указать table")
 
@@ -284,13 +223,10 @@ def count_records(
     finally:
         conn.close()
 
-# === Функции записи Excel и JSON ===
-#====================================================================
 
 def add_metadata_sheet(writer, data, debug_mode, assoc_debug, df):
     """Добавляет лист с метаданными"""
     try:
-        # Получаем версию из глобальных переменных
         version = 'N/A'
         try:
             import __main__
@@ -298,15 +234,13 @@ def add_metadata_sheet(writer, data, debug_mode, assoc_debug, df):
                 version = __main__.__version__
             elif '__version__' in globals():
                 version = globals()['__version__']
-        except:
+        except Exception:
             pass
 
-        # Определяем имя парсера
         parser_name = 'Unknown'
         if data and len(data) > 0:
             parser_name = data[0].get('Сеть', 'Unknown')
 
-        # Создаем DataFrame с метаданными
         metadata = {
             'Параметр': [
                 'Режим записи',
@@ -346,9 +280,6 @@ def add_metadata_sheet(writer, data, debug_mode, assoc_debug, df):
     except Exception as meta_error:
         print(f"⚠️ Не удалось добавить метаданные: {meta_error}")
 def write_json(data, filename):
-    """
-    Записывает данные в JSON-файл.
-    """
     try:
         folder = os.path.dirname(filename)
         if folder:
@@ -360,8 +291,6 @@ def write_json(data, filename):
     except Exception as e:
         print(f"❌ Ошибка записи JSON: {e}")
 
-
-# === Функция логирования ===
 
 def write_log(text, filename="parser_log.txt"):
     """
@@ -376,9 +305,6 @@ def write_log(text, filename="parser_log.txt"):
     except Exception as e:
         print(f"⚠️ Ошибка записи в лог: {e}")
 
-    # === Унифицированная функция логирования по ТЗ ===
-
-    # def write_log_uni(text, filename=None):
     """
     Универсальная запись лога.
     Формат строки:
@@ -386,23 +312,15 @@ def write_log(text, filename="parser_log.txt"):
     """
 
 def _load_telegram_bot_cfg() -> Optional[dict]:
-    """
-    Универсально пытается получить TelegramBot:
-    1) config.py (основной для main.py)
-    2) scheduler.config (для Scheduler)
-    """
-    # 1) config.py
+    """TelegramBot из config.py, иначе из scheduler.config."""
     try:
-#        from config import TelegramBot as TB
         from parsers_core.tlgcfg import TelegramBot as TB
         if isinstance(TB, dict):
             return TB
     except Exception:
         pass
 
-    # 2) scheduler.config
     try:
-        # Используем относительный импорт для scheduler_core
         from ..scheduler_core.config_loader import load_scheduler_config
         cfg = load_scheduler_config()
         tb = cfg.get("telegram_bot")
@@ -413,14 +331,8 @@ def _load_telegram_bot_cfg() -> Optional[dict]:
 
     return None
 
-# === Основная функция отправки уведомлений в Telegram ===
 class TelegramBot:
-    """
-    Совместимость с кодом, который ожидает TelegramBot в utils.
-
-    Реальная логика уже в функциях SendTelegram() / SendTelegramFile(),
-    поэтому здесь просто обёртки.
-    """
+    """Обёртка над SendTelegram/SendTelegramFile для старого кода."""
 
     @staticmethod
     def get(key: str, default=None):
@@ -437,12 +349,8 @@ class TelegramBot:
     def send_file(filepath: str, caption: str = "") -> bool:
         return bool(SendTelegramFile(filepath, caption))
 
-# === Дополнительная функция: отправка файла в Telegram ===
 def SendTelegramFile(filepath: str, caption: str = ""):
-    """
-    Отправляет файл (Excel, лог, JSON и т.д.) в Telegram.
-    Использует параметры из config.TelegramBot.
-    """
+    """Отправляет файл в Telegram. Настройки из config.TelegramBot."""
     TelegramBot = _load_telegram_bot_cfg()
     if not TelegramBot:
         return False
@@ -485,11 +393,7 @@ def SendTelegramFile(filepath: str, caption: str = ""):
             return False
 
 def SendTelegram(message: str):
-    """
-    Отправляет сообщение в Telegram.
-    Использует TOKEN, CHAT_ID и send из config.TelegramBot.
-    Поддерживает HTML и эмодзи.
-    """
+    """Отправляет сообщение в Telegram (HTML). Настройки из config.TelegramBot."""
 
     TelegramBot = _load_telegram_bot_cfg()
     if not TelegramBot:
@@ -509,7 +413,6 @@ def SendTelegram(message: str):
         print("⚠️ Ошибка: TOKEN или CHAT_ID не указаны в config.TelegramBot")
         return False
 
-    # ✅ Формируем сообщение с нормальными переводами строк
     message = f"{emj_agent} {my_id} {emj_agent}   ⏱️ {time_now}  \n{message}"
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
@@ -519,46 +422,30 @@ def SendTelegram(message: str):
         "parse_mode": "HTML"
     }
 
-
     try:
         response = requests.post(url, data=data, timeout=5)
         if response.status_code != 200:
-            # Telegram не критичен — просто выходим
             return False
         return True
 
     except (requests.exceptions.Timeout,
             requests.exceptions.ConnectionError):
-        # ❌ Telegram недоступен — ТИХО игнорируем
         return False
 
     except Exception:
-        # ❌ Любая другая ошибка Telegram — тоже молча
         return False
 
 
 def debug_mode(cfg_param: dict = None) -> bool:
-    """
-    DEBUG_MODE считается включённым ТОЛЬКО если:
-      DEBUG_MODE = true
-      DEBUG_MODE = 1
-      DEBUG_MODE = yes
-
-    Во всех остальных случаях — False.
-
-    Args:
-        cfg_param: словарь конфигурации (опционально)
-    """
+    """True только при DEBUG_MODE = true / 1 / yes."""
     if cfg_param is None:
-        # Используем глобальный cfg
         if cfg:
             debug_value = cfg.get("", "DEBUG_MODE", "")
         else:
-            # Fallback на config.py
             try:
                 from config import DEBUG_MODE
                 debug_value = DEBUG_MODE
-            except:
+            except Exception:
                 debug_value = ""
     else:
         debug_value = cfg_param.get("DEBUG_MODE", "")
@@ -566,22 +453,37 @@ def debug_mode(cfg_param: dict = None) -> bool:
     return str(debug_value).lower() in ("true", "1", "yes")
 
 
-def update_retail_points(parser_name: str, city: str, count: int) -> bool:
-    """
-    Обновляет количество торговых точек и фиксирует событие в Excel-файле.
-    """
-    try:
-        from config import db_retail_map
-    except Exception:
-        print("⚠️ update_retail_points: нет db_retail_map в config.py — пропуск")
-        return False
+def update_retail_points(parser_name: str, city: str, count: int, filename: str = None) -> bool:
+    """Число точек сети в DB_Retail_Points_MAP.xlsx. Файл под блокировкой — для параллельного запуска."""
+    if filename is None:
+        try:
+            from config import db_retail_map
+        except Exception:
+            print("⚠️ update_retail_points: нет db_retail_map в config.py — пропуск")
+            return False
+        filename = db_retail_map
 
-    # --- 1. Корректируем путь ---
-    filename = db_retail_map
     if not filename.lower().endswith(".xlsx"):
         filename += ".xlsx"
 
-    # --- 2. Если файла нет — создаём новый ---
+    from .filelock import locked, LockTimeout
+
+    for attempt in range(5):
+        try:
+            with locked(filename, timeout=60):
+                return _update_retail_points_unlocked(filename, parser_name, city, count)
+        except PermissionError:
+            if attempt == 4:
+                print(f"⚠️ update_retail_points: {filename} занят (открыт в Excel?) — пропуск {parser_name} / {city}")
+                return False
+            time.sleep(2)
+        except LockTimeout as e:
+            print(f"⚠️ update_retail_points: {e} — пропуск {parser_name} / {city}")
+            return False
+    return False
+
+
+def _update_retail_points_unlocked(filename, parser_name, city, count):
     if not os.path.exists(filename):
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -598,7 +500,6 @@ def update_retail_points(parser_name: str, city: str, count: int) -> bool:
     old_count = None
     found = False
 
-    # --- 3. Ищем строку ---
     for row in ws.iter_rows(min_row=2, max_col=5):
         parser_cell = row[2].value
         city_cell = row[3].value
@@ -609,7 +510,6 @@ def update_retail_points(parser_name: str, city: str, count: int) -> bool:
             old_count = row[4].value
             found = True
 
-            # Проверяем, нужно ли обновлять
             if old_count is None or count > int(old_count):
                 row[0].value = today
                 row[1].value = now_time
@@ -621,64 +521,37 @@ def update_retail_points(parser_name: str, city: str, count: int) -> bool:
 
             break
 
-    # --- 4. Если строка не найдена — создаём новую ---
     if not found:
         ws.append([today, now_time, parser_name, city, count])
         updated = True
         print(f"➕ Добавлено: {parser_name} — {city} количество ТТ 🏪 = {count} 🆕")
 
-    # --- 5. Если не нашли и не обновились — старый count остался прежним ---
     if not updated and found:
         print(f"ℹ️ Без изменений: {parser_name} — {city} количество ТТ 🏪 {count} <= {old_count} 📇")
 
-    # --- 6. Сохраняем если были изменения ---
     if updated:
         wb.save(filename)
 
     return updated
 
 
-#|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-
-#====== для v 4.20   ======================================================================================
-# Предполагаем, что эти функции уже определены где-то в вашем коде
-# from config_loader import cfg
-# from utils import SendTelegram, count_records, add_metadata_sheet
-
 def write_sql_draft(data, debug_mode=False, assoc_debug=False):
-    """
-    Записывает данные в PostgreSQL (таблица retail_draft).
-    ВСЕГДА дописывает данные к существующим.
+    """Дописывает данные в retail_draft (PostgreSQL). Набор полей зависит от debug_mode / assoc_debug."""
 
-    Три режима работы:
-    1. debug_mode=True: все поля (полный дебаг data_enricher)
-    2. assoc_debug=True: основные + поля категорий для отладки ассоциаций
-    3. Оба False: только production поля для КП
-
-    Нормализация данных:
-    - Бренд (нормализованный) → Бренд
-    - weight_volume → Вес
-    - uni_cat → Категория
-    - Артикул → GTIN (если GTIN пустой)
-    """
-
-    # Используем cfg из config_loader
     if cfg:
         try:
             SQL = cfg.get("SQL", {})
             TelegramBot = cfg.get("TelegramBot", {})
-        except:
+        except Exception:
             SQL = {}
             TelegramBot = {}
     else:
-        # Fallback на старый импорт
         try:
             from config import SQL, TelegramBot
         except Exception as e:
             print(f"⚠️🧯 SQL Draft пропущен — нет SQL/TelegramBot в config.py: {e}")
             return "FAILED"
 
-    # --- базовые проверки ---
     if not isinstance(SQL, dict) or not SQL.get("DB_Draft"):
         print("⚠️🧯 SQL Draft пропущен — нет DB_Draft")
         return "FAILED"
@@ -696,32 +569,25 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
     print(f"📝 ПОДГОТОВКА ДАННЫХ ДЛЯ POSTGRESQL")
     print(f"{'=' * 60}")
 
-    # === ПОДГОТОВКА И НОРМАЛИЗАЦИЯ ДАННЫХ ===
     prepared_data = []
 
     for item in data:
         new_item = item.copy()
 
-        # === НОРМАЛИЗАЦИЯ ДАННЫХ ===
-        # 1. Бренд: копируем нормализованный бренд если есть
         normalized_brand = item.get('Бренд (нормализованный)') or item.get('normalized_brand')
         if normalized_brand:
             new_item['Бренд'] = normalized_brand
-            # Сохраняем также в отдельное поле для отладки
             new_item['normalized_brand'] = normalized_brand
 
-        # 2. Вес: копируем weight_volume если поле Вес пустое
         weight_volume = item.get('weight_volume')
         current_weight = item.get('Вес') or item.get('weight')
         if weight_volume and not current_weight:
             new_item['Вес'] = weight_volume
 
-        # 3. Категория: копируем uni_cat в Категория
         uni_cat = item.get('uni_cat')
         if uni_cat:
             new_item['Категория'] = uni_cat
 
-        # 4. GTIN: если GTIN пустой, используем Артикул
         current_gtin = item.get('GTIN') or item.get('gtin')
         article = item.get('Артикул') or item.get('article')
         if not current_gtin and article:
@@ -729,14 +595,11 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
 
         prepared_data.append(new_item)
 
-    # === ВЫБОР ПОЛЕЙ В ЗАВИСИМОСТИ ОТ РЕЖИМА ===
     if debug_mode:
-        # В debug_mode показываем все поля (полный дебаг data_enricher)
         mode_label = "DEBUG (data_enricher)"
         data_for_sql = prepared_data
         print(f"🔧 Режим: {mode_label} - все технические поля")
 
-        # Показываем статистику нормализации
         normalized_count = sum(
             1 for item in prepared_data if 'Бренд (нормализованный)' in item and item['Бренд (нормализованный)'])
         weight_fixed = sum(1 for item in prepared_data if item.get('weight_volume') and not item.get('Вес'))
@@ -744,7 +607,6 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
         print(f"📊 Нормализация: {normalized_count} брендов, {weight_fixed} весов, {cat_normalized} категорий")
 
     elif assoc_debug:
-        # В assoc_debug режиме скрываем технические поля data_enricher, но показываем поля ассоциаций
         mode_label = "ASSOC_DEBUG"
         technical_fields_to_hide = [
             '_data_quality', '_enriched_timestamp', 'brand_source',
@@ -764,7 +626,6 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
         print(f"🔍 Режим: {mode_label} - поля для отладки ассоциаций")
 
     else:
-        # В production режиме скрываем все технические и отладочные поля
         mode_label = "PRODUCTION"
         technical_fields_to_hide = [
             '_data_quality', '_enriched_timestamp', 'brand_source',
@@ -779,7 +640,6 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
             new_item = {}
             for key, value in item.items():
                 if key not in technical_fields_to_hide:
-                    # Сохраняем нормализованные данные
                     new_item[key] = value
             filtered_data.append(new_item)
 
@@ -788,7 +648,6 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
 
     print(f"📊 Записей для записи: {len(data_for_sql)}")
 
-    # === ПОДКЛЮЧЕНИЕ К POSTGRESQL ===
     try:
         print(f"\n🔗 Подключение к PostgreSQL...")
         conn = psycopg2.connect(
@@ -814,7 +673,6 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
     agent = TelegramBot.get("MY_ID", "unknown")
 
     try:
-        # === ПРОВЕРКА СУЩЕСТВОВАНИЯ ТАБЛИЦЫ ===
         check_table_sql = f"""
             SELECT EXISTS (
                 SELECT FROM information_schema.tables 
@@ -825,7 +683,6 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
         table_exists = cursor.fetchone()[0]
 
         if table_exists:
-            # Получаем количество существующих записей
             count_sql = f'SELECT COUNT(*) FROM "{DB_TABLE}"'
             cursor.execute(count_sql)
             old_count = cursor.fetchone()[0]
@@ -834,9 +691,7 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
             old_count = 0
             print(f"📊 Таблица не существует, будет создана")
 
-        # === СОЗДАНИЕ ТАБЛИЦЫ ЕСЛИ НЕ СУЩЕСТВУЕТ ===
         if not table_exists:
-            # Базовые поля для всех режимов
             create_table_sql = f"""
                 CREATE TABLE "{DB_TABLE}" (
                     id SERIAL PRIMARY KEY,
@@ -862,7 +717,6 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             """
 
-            # Добавляем дополнительные поля для debug режимов
             if debug_mode or assoc_debug:
                 create_table_sql += """,
                     rule_id TEXT,
@@ -871,7 +725,6 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
                     normalized_brand TEXT
                 """
 
-                # Дополнительные поля для полного debug_mode
                 if debug_mode:
                     create_table_sql += """,
                         code_cat INTEGER,
@@ -889,7 +742,6 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
             cursor.execute(create_table_sql)
             print(f"✅ Таблица создана")
 
-        # === ВСТАВКА ДАННЫХ ===
         print(f"\n💾 Вставка {len(data_for_sql)} записей...")
 
         inserted_count = 0
@@ -897,25 +749,19 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
 
         for row in data_for_sql:
             try:
-                # === ПОДГОТОВКА ЗНАЧЕНИЙ ===
-                # Основные поля
                 brand = row.get("Бренд") or row.get("brand") or ""
                 product_name = row.get("Название продукта") or row.get("product_name") or ""
                 price = row.get("Цена") or row.get("price") or 0
                 promo_price = row.get("Цена по акции") or row.get("promo_price") or 0
 
-                # Категория - используем нормализованную если есть
                 category = row.get("Категория") or row.get("category") or row.get("uni_cat") or ""
 
-                # Вес - используем нормализованный если есть
                 weight = row.get("Вес") or row.get("weight") or row.get("weight_volume") or ""
 
-                # GTIN - используем Артикул если GTIN пустой
                 gtin = row.get("GTIN") or row.get("gtin") or ""
                 if not gtin:
                     gtin = row.get("Артикул") or row.get("article") or ""
 
-                # Базовые поля и значения
                 base_fields = [
                     "data_date", "data_time", "agent", "retailer", "store_type", "address",
                     "brand", "product_name", "price", "promo_price", "photo_url", "product_url",
@@ -923,52 +769,48 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
                 ]
 
                 base_values = [
-                    date_now,  # data_date
-                    time_now,  # data_time
-                    agent,  # agent
+                    date_now,
+                    time_now,
+                    agent,
                     row.get("Сеть") or row.get("retailer") or "",
                     row.get("Тип магазина") or row.get("store_type") or "",
                     row.get("Адрес Торговой точки") or row.get("address") or "",
-                    brand,  # brand (уже нормализованный)
-                    product_name,  # product_name
-                    price,  # price
-                    promo_price,  # promo_price
+                    brand,
+                    product_name,
+                    price,
+                    promo_price,
                     row.get("Фото товара") or row.get("photo_url") or "",
                     row.get("Ссылка на страницу") or row.get("product_url") or "",
                     row.get("Рейтинг") or row.get("rating") or 0,
                     row.get("Объем") or row.get("volume") or "",
-                    weight,  # weight (уже нормализованный)
+                    weight,
                     row.get("Остаток") or row.get("stock") or "",
-                    category,  # category (уже нормализованная)
-                    gtin,  # gtin (с Артикула если нужно)
-                    False  # flag
+                    category,
+                    gtin,
+                    False
                 ]
 
-                # Дополнительные поля и значения для debug режимов
                 extra_fields = []
                 extra_values = []
 
                 if debug_mode or assoc_debug:
-                    # Поля для отладки ассоциаций
                     rule_id = row.get("rule_id") or row.get("ID правила") or ""
                     confidence_val = row.get("confidence") or row.get("Уверенность") or 0.0
                     retail_category = row.get("retail_cat") or row.get("Категория ритейлера") or ""
                     normalized_brand_val = row.get("normalized_brand") or brand
 
-                    # Фиксим confidence
                     try:
                         confidence_val = float(confidence_val)
                         if confidence_val > 1.0:
                             confidence_val = 1.0
                         elif confidence_val < 0.0:
                             confidence_val = 0.0
-                    except:
+                    except Exception:
                         confidence_val = 0.0
 
                     extra_fields.extend(["rule_id", "confidence", "retail_category", "normalized_brand"])
                     extra_values.extend([rule_id, confidence_val, retail_category, normalized_brand_val])
 
-                    # Дополнительные поля для полного debug_mode
                     if debug_mode:
                         extra_fields.extend([
                             "code_cat", "brand_source", "cat_source",
@@ -987,7 +829,6 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
                             row.get("_enriched_timestamp") or ""
                         ])
 
-                # Формируем полный запрос
                 all_fields = base_fields + extra_fields
                 all_values = base_values + extra_values
 
@@ -1002,19 +843,16 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
                 cursor.execute(insert_sql, all_values)
                 inserted_count += 1
 
-                # Прогресс каждые 50 записей
                 if inserted_count % 50 == 0:
                     print(f"   ... записано {inserted_count} из {len(data_for_sql)}")
 
             except Exception as row_error:
                 skipped_count += 1
-                if skipped_count <= 3:  # Показываем только первые 3 ошибки
+                if skipped_count <= 3:
                     print(f"⚠️ Пропущена запись: {row_error}")
 
-        # === ФИНАЛИЗАЦИЯ ===
         conn.commit()
 
-        # Получаем общее количество записей
         cursor.execute(f'SELECT COUNT(*) FROM "{DB_TABLE}"')
         total_count = cursor.fetchone()[0]
         new_added = total_count - old_count
@@ -1027,10 +865,8 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
         print(f"   • Успешно вставлено: {inserted_count}")
         print(f"   • Пропущено: {skipped_count}")
 
-        # Статистика нормализации
         print(f"\n📊 НОРМАЛИЗАЦИЯ ДАННЫХ:")
         if new_added > 0:
-            # Примерная статистика
             print(f"   • Бренды нормализованы: да (если данные были)")
             print(f"   • Веса из weight_volume: да (если нужно было)")
             print(f"   • Категории из uni_cat: да (если были)")
@@ -1040,7 +876,6 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
         return "POSTGRES"
 
     except Exception as e:
-        # --- ЛЮБАЯ ошибка INSERT → SQLite ---
         conn.rollback()
         print(f"\n❌️🗄️ Ошибка записи в PostgreSQL: {e}")
         print(f"🔄 Переход к SQLite...")
@@ -1049,7 +884,7 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
         try:
             cursor.close()
             conn.close()
-        except:
+        except Exception:
             pass
 
         return write_sqlite_draft(prepared_data, debug_mode=debug_mode, assoc_debug=assoc_debug)
@@ -1060,30 +895,23 @@ def write_sql_draft(data, debug_mode=False, assoc_debug=False):
             conn.close()
             print(f"🔗 Соединение закрыто")
             print(f"{'=' * 60}")
-        except:
+        except Exception:
             pass
 
 
 def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
-    """
-    Fallback запись в SQLite при ошибке PostgreSQL
-    ВСЕГДА дописывает данные к существующим.
+    """Запасная запись в SQLite, если PostgreSQL недоступен."""
 
-    Идентичная логика нормализации и режимов как в write_sql_draft
-    """
-
-    # Используем cfg из config_loader
     if cfg:
         try:
             sqlite_file = cfg.get("", "sqlite_file", "")
             TelegramBot = cfg.get("TelegramBot", {})
             SQL = cfg.get("SQL", {})
-        except:
+        except Exception:
             sqlite_file = ""
             TelegramBot = {}
             SQL = {}
     else:
-        # Fallback на старый импорт
         try:
             from config import sqlite_file, TelegramBot, SQL
         except Exception as e:
@@ -1095,7 +923,6 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
         print("⚠️🛟 SQLite Draft пропущен — TABLE_Draft не задан")
         return "FAILED"
 
-    # --- guard: SQLite отключён ---
     if not sqlite_file:
         print("⚠️🛟 SQLite Draft пропущен — sqlite_file не задан в config.py")
         return "FAILED"
@@ -1108,31 +935,25 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
     print(f"📝 ПОДГОТОВКА ДАННЫХ ДЛЯ SQLITE")
     print(f"{'=' * 60}")
 
-    # === ПОДГОТОВКА И НОРМАЛИЗАЦИЯ ДАННЫХ ===
     prepared_data = []
 
     for item in data:
         new_item = item.copy()
 
-        # Нормализация данных (такая же логика как в PostgreSQL)
-        # 1. Бренд
         normalized_brand = item.get('Бренд (нормализованный)') or item.get('normalized_brand')
         if normalized_brand:
             new_item['Бренд'] = normalized_brand
             new_item['normalized_brand'] = normalized_brand
 
-        # 2. Вес
         weight_volume = item.get('weight_volume')
         current_weight = item.get('Вес') or item.get('weight')
         if weight_volume and not current_weight:
             new_item['Вес'] = weight_volume
 
-        # 3. Категория
         uni_cat = item.get('uni_cat')
         if uni_cat:
             new_item['Категория'] = uni_cat
 
-        # 4. GTIN из Артикула
         current_gtin = item.get('GTIN') or item.get('gtin')
         article = item.get('Артикул') or item.get('article')
         if not current_gtin and article:
@@ -1140,7 +961,6 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
 
         prepared_data.append(new_item)
 
-    # === ВЫБОР ПОЛЕЙ В ЗАВИСИМОСТИ ОТ РЕЖИМА ===
     if debug_mode:
         mode_label = "DEBUG (data_enricher)"
         data_for_sqlite = prepared_data
@@ -1190,7 +1010,6 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
 
     path = sqlite_file
 
-    # --- создаём директорию при необходимости ---
     try:
         folder = os.path.dirname(path)
         if folder:
@@ -1205,7 +1024,6 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
         cur = conn.cursor()
         print(f"✅ Подключение успешно")
 
-        # === ПРОВЕРКА СУЩЕСТВОВАНИЯ ТАБЛИЦЫ ===
         cur.execute(f"""
             SELECT name FROM sqlite_master 
             WHERE type='table' AND name='{DB_TABLE}'
@@ -1213,7 +1031,6 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
         table_exists = cur.fetchone() is not None
 
         if table_exists:
-            # Получаем количество существующих записей
             cur.execute(f'SELECT COUNT(*) FROM "{DB_TABLE}"')
             old_count = cur.fetchone()[0]
             print(f"📊 Таблица существует, записей: {old_count}")
@@ -1221,8 +1038,6 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
             old_count = 0
             print(f"📊 Таблица не существует, будет создана")
 
-        # --- СОЗДАНИЕ ТАБЛИЦЫ С УЧЕТОМ РЕЖИМА ---
-        # Базовые поля
         table_definition = f"""
             CREATE TABLE IF NOT EXISTS "{DB_TABLE}" (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1248,7 +1063,6 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         """
 
-        # Добавляем дополнительные поля для debug режимов
         if debug_mode or assoc_debug:
             table_definition += """,
                 rule_id TEXT,
@@ -1257,7 +1071,6 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
                 normalized_brand TEXT
             """
 
-            # Дополнительные поля для полного debug_mode
             if debug_mode:
                 table_definition += """,
                     code_cat INTEGER,
@@ -1281,7 +1094,6 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
         time_now = datetime.now().strftime("%H:%M:%S")
         agent = TelegramBot.get("MY_ID", "unknown")
 
-        # === ВСТАВКА ДАННЫХ ===
         print(f"\n💾 Вставка {len(data_for_sqlite)} записей...")
 
         added = 0
@@ -1289,46 +1101,39 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
 
         for row in data_for_sqlite:
             try:
-                # === ПОДГОТОВКА ЗНАЧЕНИЙ ===
-                # Основные поля
                 brand = row.get("Бренд") or row.get("brand") or ""
                 product_name = row.get("Название продукта") or row.get("product_name") or ""
 
-                # Категория
                 category = row.get("Категория") or row.get("category") or row.get("uni_cat") or ""
 
-                # Вес
                 weight = row.get("Вес") or row.get("weight") or row.get("weight_volume") or ""
 
-                # GTIN
                 gtin = row.get("GTIN") or row.get("gtin") or ""
                 if not gtin:
                     gtin = row.get("Артикул") or row.get("article") or ""
 
-                # Базовые значения
                 base_values = [
-                    date_now,  # data_date
-                    time_now,  # data_time
-                    agent,  # agent
+                    date_now,
+                    time_now,
+                    agent,
                     row.get("Сеть") or row.get("retailer") or "",
                     row.get("Тип магазина") or row.get("store_type") or "",
                     row.get("Адрес Торговой точки") or row.get("address") or "",
-                    brand,  # brand
-                    product_name,  # product_name
+                    brand,
+                    product_name,
                     row.get("Цена") or row.get("price") or 0,
                     row.get("Цена по акции") or row.get("promo_price") or 0,
                     row.get("Фото товара") or row.get("photo_url") or "",
                     row.get("Ссылка на страницу") or row.get("product_url") or "",
                     row.get("Рейтинг") or row.get("rating") or 0,
                     row.get("Объем") or row.get("volume") or "",
-                    weight,  # weight
+                    weight,
                     row.get("Остаток") or row.get("stock") or "",
-                    category,  # category
-                    gtin,  # gtin
-                    0  # flag
+                    category,
+                    gtin,
+                    0
                 ]
 
-                # Дополнительные значения для debug режимов
                 extra_values = []
                 if debug_mode or assoc_debug:
                     rule_id = row.get("rule_id") or row.get("ID правила") or ""
@@ -1336,19 +1141,17 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
                     retail_category = row.get("retail_cat") or row.get("Категория ритейлера") or ""
                     normalized_brand_val = row.get("normalized_brand") or brand
 
-                    # Фиксим confidence
                     try:
                         confidence_val = float(confidence_val)
                         if confidence_val > 1.0:
                             confidence_val = 1.0
                         elif confidence_val < 0.0:
                             confidence_val = 0.0
-                    except:
+                    except Exception:
                         confidence_val = 0.0
 
                     extra_values.extend([rule_id, confidence_val, retail_category, normalized_brand_val])
 
-                    # Дополнительные поля для полного debug_mode
                     if debug_mode:
                         extra_values.extend([
                             row.get("code_cat") or -1,
@@ -1361,10 +1164,8 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
                             row.get("_enriched_timestamp") or ""
                         ])
 
-                # Формируем полный список значений
                 all_values = base_values + extra_values
 
-                # Формируем SQL запрос
                 placeholders = ", ".join(["?"] * len(all_values))
                 cur.execute(f"""
                     INSERT INTO "{DB_TABLE}" VALUES (NULL, {placeholders})
@@ -1372,20 +1173,17 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
 
                 added += 1
 
-                # Прогресс каждые 50 записей
                 if added % 50 == 0:
                     print(f"   ... записано {added} из {len(data_for_sqlite)}")
 
             except Exception as row_error:
                 skipped += 1
-                if skipped <= 3:  # Показываем только первые 3 ошибки
+                if skipped <= 3:
                     print(f"⚠️ Пропущена запись: {row_error}")
 
-        # === ФИНАЛИЗАЦИЯ ===
         conn.commit()
         conn.close()
 
-        # Получаем общее количество записей
         n = count_records(sqlite_file, table=DB_TABLE)
         new_added = n - old_count
 
@@ -1398,7 +1196,6 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
         print(f"   • Пропущено: {skipped}")
         print(f"   📁 Файл: {path}")
 
-        # Статистика нормализации
         if new_added > 0:
             print(f"\n📊 НОРМАЛИЗАЦИЯ ДАННЫХ:")
             print(f"   • Данные нормализованы: да (бренд, вес, категория, GTIN)")
@@ -1411,54 +1208,32 @@ def write_sqlite_draft(data, debug_mode=False, assoc_debug=False):
         SendTelegram(f"❌️🛟 SQLite Draft: ошибка записи\n{e}")
         try:
             conn.close()
-        except:
+        except Exception:
             pass
         print(f"{'=' * 60}")
         return "FAILED"
 
-#====================================================================================================
 def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug=False):
-    """
-    Записывает данные в Excel файл
-    Всегда дописывает данные к существующему файлу
-
-    Три режима работы:
-    1. debug_mode=True: все поля (полный дебаг data_enricher)
-    2. assoc_debug=True: основные + поля категорий для отладки ассоциаций
-    3. Оба False: только production поля для КП
-
-    Нормализация данных:
-    - Бренд (нормализованный) → Бренд
-    - weight_volume → Вес
-    - uni_cat → Категория
-    - Артикул → GTIN (если GTIN пустой)
-    """
+    """Дописывает данные в Excel. Набор полей зависит от debug_mode / assoc_debug."""
     if not data:
         print("⚠️ Нет данных для записи в Excel")
         return
 
     try:
-        # Конвертируем в DataFrame
         df = pd.DataFrame(data)
 
         print(f"\n{'=' * 60}")
         print(f"📝 ПОДГОТОВКА ДАННЫХ ДЛЯ EXCEL")
         print(f"{'=' * 60}")
 
-        # === НОРМАЛИЗАЦИЯ ДАННЫХ В DATAFRAME ===
-
-        # 1. Бренд: копируем нормализованный бренд если есть
         if 'Бренд (нормализованный)' in df.columns:
-            # Заменяем пустые или NaN значения в основном Бренде нормализованными
             mask = df['Бренд (нормализованный)'].notna()
             if mask.any():
                 df.loc[mask, 'Бренд'] = df.loc[mask, 'Бренд (нормализованный)']
                 normalized_count = mask.sum()
                 print(f"🏷️  Нормализовано {normalized_count} брендов")
 
-        # 2. Вес: копируем weight_volume если поле Вес пустое
         if 'weight_volume' in df.columns:
-            # Создаем колонку 'Вес', если она отсутствует
             if 'Вес' not in df.columns:
                 df['Вес'] = None
             mask = df['weight_volume'].notna() & (df['Вес'].isna() | (df['Вес'] == ''))
@@ -1467,35 +1242,26 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
                 weight_fixed = mask.sum()
                 print(f"⚖️  Перенесено {weight_fixed} весов/объемов из weight_volume")
 
-        # 3. Категория: копируем uni_cat в Категория
         if 'uni_cat' in df.columns:
-            # Создаем колонку Категория если нет
             if 'Категория' not in df.columns:
                 df['Категория'] = df['uni_cat']
             else:
-                # Заполняем пустые категории из uni_cat
                 mask = df['uni_cat'].notna() & (df['Категория'].isna() | (df['Категория'] == ''))
                 if mask.any():
                     df.loc[mask, 'Категория'] = df.loc[mask, 'uni_cat']
             cat_normalized = df['uni_cat'].notna().sum()
             print(f"📦  Нормализовано {cat_normalized} категорий из uni_cat")
 
-        # 4. GTIN: если GTIN пустой, используем Артикул
         if 'Артикул' in df.columns:
-            # Проверяем есть ли колонка GTIN
             if 'GTIN' not in df.columns:
                 df['GTIN'] = df['Артикул']
             else:
-                # Заполняем пустые GTIN из Артикула
                 mask = df['Артикул'].notna() & (df['GTIN'].isna() | (df['GTIN'] == ''))
                 if mask.any():
                     df.loc[mask, 'GTIN'] = df.loc[mask, 'Артикул']
                     gtin_fixed = mask.sum()
                     print(f"🔢  Заполнено {gtin_fixed} GTIN из Артикулов")
 
-        # === ВЫБОР ПОЛЕЙ В ЗАВИСИМОСТИ ОТ РЕЖИМА ===
-
-        # Определяем режим
         if debug_mode:
             mode_name = "DEBUG (data_enricher)"
             print(f"🔧 Режим: {mode_name} - все технические поля")
@@ -1506,8 +1272,6 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
             mode_name = "PRODUCTION"
             print(f"📤 Режим: {mode_name} - только production поля для КП")
 
-        # Списки полей для разных режимов
-        # Основные поля (всегда показываем в production)
         main_fields = [
             'Номер', 'Сеть', 'Тип магазина', 'Адрес Торговой точки',
             'Бренд', 'Название продукта', 'Цена', 'Цена по акции',
@@ -1515,10 +1279,8 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
             'Объем', 'Вес', 'Остаток', 'Категория', 'GTIN'
         ]
 
-        # Поля категорий (только для assoc_debug и debug)
         category_fields = ['ID правила', 'Уверенность', 'Категория ритейлера']
 
-        # Технические поля data_enricher (только для debug_mode)
         technical_fields = [
             'uni_cat', 'code_cat', 'brand', 'brand_source',
             'normalized_name', 'weight_volume', 'packaging',
@@ -1526,27 +1288,19 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
             'Бренд (нормализованный)', 'rule_id', 'confidence', 'retail_cat'
         ]
 
-        # Формируем окончательный список полей
         if debug_mode:
-            # Все поля включая технические
             all_fields = main_fields + technical_fields
-            # Добавляем все что еще есть
             other_fields = [f for f in df.columns if f not in all_fields]
             all_fields = all_fields + other_fields
 
         elif assoc_debug:
-            # Основные + поля категорий, без технических полей data_enricher
             all_fields = main_fields + category_fields
-            # Убираем технические поля
             all_fields = [f for f in all_fields if f not in technical_fields]
-            # Добавляем все что еще есть (кроме технических)
             other_fields = [f for f in df.columns if f not in all_fields and f not in technical_fields]
             all_fields = all_fields + other_fields
 
         else:
-            # PRODUCTION: ТОЛЬКО основные поля
             all_fields = main_fields.copy()
-            # Убираем все технические поля
             technical_fields_to_exclude = [
                 'uni_cat', 'code_cat', 'brand', 'brand_source',
                 'normalized_name', 'weight_volume', 'packaging',
@@ -1556,20 +1310,17 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
             ]
             all_fields = [f for f in all_fields if f not in technical_fields_to_exclude]
 
-            # Добавляем только не-технические поля
             other_fields = [f for f in df.columns
                             if f not in all_fields
                             and f not in technical_fields_to_exclude
-                            and not f.startswith('_')  # убираем все поля с подчеркиванием
+                            and not f.startswith('_')
                             and not f.endswith('_source')
                             and not f.endswith('_timestamp')
                             and 'normalized' not in f.lower()]
             all_fields = all_fields + other_fields
 
-        # Оставляем только существующие поля
         existing_fields = [field for field in all_fields if field in df.columns]
 
-        # Убираем дубликаты, сохраняя порядок
         seen = set()
         final_fields = [x for x in existing_fields if not (x in seen or seen.add(x))]
 
@@ -1579,11 +1330,7 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
         if len(final_fields) > 15:
             print(f"   ... и еще {len(final_fields) - 15} колонок")
 
-        # Выбираем только нужные поля
         df = df[final_fields]
-
-        # === ПЕРЕИМЕНОВАНИЕ КОЛОНОК ДЛЯ ЧИТАЕМОСТИ (если нужно) ===
-        # В production режиме переименования не нужны, так как технических полей нет
 
         if debug_mode or assoc_debug:
             column_renames = {}
@@ -1623,10 +1370,8 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
             if column_renames:
                 df = df.rename(columns=column_renames)
 
-        # === СТАТИСТИКА ПО КОЛОНКАМ ===
         print(f"\n📊 СТАТИСТИКА ДАННЫХ:")
 
-        # Основные колонки
         essential_cols = ['Бренд', 'Вес', 'Категория', 'GTIN']
         for col in essential_cols:
             if col in df.columns:
@@ -1636,7 +1381,6 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
                 status = "✓" if percent > 80 else "⚠️"
                 print(f"   {status} {col}: {filled}/{total} заполнено ({percent:.1f}%)")
 
-        # Категории
         if 'Категория' in df.columns:
             categorized = df['Категория'].notna().sum()
             total = len(df)
@@ -1646,7 +1390,6 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
                 status = "✓" if percent > 80 else "⚠️"
                 print(f"   {status} Категории: {categorized}/{total} ({percent:.1f}%), уникальных: {unique_cats}")
 
-        # === ЗАПИСЬ В EXCEL (ВСЕГДА ДОПИСЫВАЕТ) ===
         print(f"\n💾 ЗАПИСЬ В EXCEL:")
 
         file_exists = os.path.exists(filename)
@@ -1655,25 +1398,20 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
             print(f"📁 Файл существует: {filename}")
 
             try:
-                # Загружаем существующие данные
                 existing_df = pd.read_excel(filename, sheet_name=sheet_name)
                 old_count = len(existing_df)
                 print(f"📊 В файле уже есть: {old_count} строк")
 
-                # Проверяем совместимость колонок
                 if not existing_df.columns.equals(df.columns):
                     print("⚠️ Колонки не совпадают, пытаемся объединить...")
 
-                    # Объединяем колонки из старого и нового DataFrame
                     all_columns = list(dict.fromkeys(list(existing_df.columns) + list(df.columns)))
 
-                    # Переиндексируем оба DataFrame чтобы иметь одинаковые колонки
                     existing_df = existing_df.reindex(columns=all_columns)
                     df = df.reindex(columns=all_columns)
 
                     print(f"   Объединенные колонки: {len(all_columns)}")
 
-                # Объединяем старые и новые данные
                 combined_df = pd.concat([existing_df, df], ignore_index=True, sort=False)
                 new_count = len(combined_df)
                 added_count = new_count - old_count
@@ -1681,11 +1419,9 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
                 print(f"📈 Объединяем: {old_count} старых + {len(df)} новых")
                 print(f"📊 Итого будет: {new_count} строк (+{added_count})")
 
-                # Сохраняем объединенные данные
                 with pd.ExcelWriter(filename, engine='openpyxl', mode='w') as writer:
                     combined_df.to_excel(writer, sheet_name=sheet_name, index=False)
 
-                    # Добавляем метаданные для debug режимов
                     if (debug_mode or assoc_debug) and len(data) > 0:
                         add_metadata_sheet(writer, data, debug_mode, assoc_debug, combined_df)
 
@@ -1695,7 +1431,6 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
                 print(f"❌ Ошибка при чтении/объединении файла: {e}")
                 print(f"📝 Создаем новый файл с текущими данными")
 
-                # Создаем новый файл с текущими данными
                 with pd.ExcelWriter(filename, engine='openpyxl', mode='w') as writer:
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
 
@@ -1707,7 +1442,6 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
         else:
             print(f"📁 Файл не существует, создаем новый: {filename}")
 
-            # Создаем новый файл
             with pd.ExcelWriter(filename, engine='openpyxl', mode='w') as writer:
                 df.to_excel(writer, sheet_name=sheet_name, index=False)
 
@@ -1716,7 +1450,6 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
 
             print(f"📝 Создан новый файл с {len(df)} строками")
 
-        # === ФИНАЛЬНАЯ ПРОВЕРКА ===
         try:
             final_df = pd.read_excel(filename, sheet_name=sheet_name)
             print(f"\n✅ ФАЙЛ УСПЕШНО СОХРАНЕН")
@@ -1724,7 +1457,6 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
             print(f"📊 Итоговое количество строк: {len(final_df)}")
             print(f"📊 Итоговое количество колонок: {len(final_df.columns)}")
 
-            # Показываем все колонки
             cols_list = final_df.columns.tolist()
             print(f"📋 Колонки в файле ({len(cols_list)}):")
             for i, col in enumerate(cols_list[:20], 1):
@@ -1743,32 +1475,19 @@ def write_excel(data, filename, sheet_name="Data", debug_mode=False, assoc_debug
         traceback.print_exc()
         print(f"{'=' * 60}")
 
-#====== для v 4.20   ======================================================================================
-
-#||||||| v4.22 compatibility helper  ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
-# Safe names (table/file)
-# v4.22 compatibility helper
 
 def MakeSafeTableName(name: str, max_len: int = 80) -> str:
-    """
-    Делает безопасное имя для Excel/SQLite/файлов:
-    - заменяет запрещённые символы на '_'
-    - схлопывает повторяющиеся '_'
-    - обрезает до max_len
-    - гарантирует непустое имя
-    """
+    """Имя без запрещённых символов для листа Excel, таблицы или файла."""
     if name is None:
         name = ""
     name = str(name).strip()
 
-    # заменяем всё кроме букв/цифр/._- на "_"
     safe = re.sub(r"[^0-9A-Za-zА-Яа-я._-]+", "_", name, flags=re.UNICODE)
     safe = re.sub(r"_+", "_", safe).strip("._- ")
 
     if not safe:
         safe = "table"
 
-    # ограничим длину
     if max_len and len(safe) > max_len:
         safe = safe[:max_len].rstrip("._- ")
 
@@ -1776,28 +1495,11 @@ def MakeSafeTableName(name: str, max_len: int = 80) -> str:
 
 
 def MakeSafeFileName(name: str, max_len: int = 120) -> str:
-    """
-    Алиас под безопасное имя файла (если где-то в коде так зовут).
-    """
     return MakeSafeTableName(name, max_len=max_len)
-# -----------------------------
-# Excel save compatibility
-# v4.22 helper (for main.py)
-# -----------------------------
 
 def SaveToExcel(*args, **kwargs):
-    """
-    Совместимость с main.py v4.20–v4.22
-
-    Если в проекте есть реальная функция сохранения Excel
-    (например WriteExcel / ExportToExcel / save_xlsx),
-    сюда можно прокинуть вызов.
-
-    Пока — безопасная заглушка:
-    main.py не упадёт, логика парсеров сохранится.
-    """
+    """Заглушка для main.py v4.20–4.22."""
     try:
-        # Попытка найти реальную функцию (если она есть под другим именем)
         if 'WriteExcel' in globals():
             return globals()['WriteExcel'](*args, **kwargs)
 
@@ -1807,29 +1509,13 @@ def SaveToExcel(*args, **kwargs):
         if 'save_xlsx' in globals():
             return globals()['save_xlsx'](*args, **kwargs)
 
-        # Если ни одной нет — просто сообщаем
         print("⚠️ SaveToExcel: реальная функция сохранения не найдена, пропуск.")
 
     except Exception as e:
         print(f"❌ SaveToExcel error: {e}")
 
-# -----------------------------
-# Text normalization
-# v4.22 compatibility helper
-# -----------------------------
 def NormalizeText(text: str) -> str:
-    """
-    Универсальная нормализация текста:
-    - None -> ""
-    - приведение к str
-    - Unicode NFKD
-    - lower()
-    - удаление лишних пробелов
-    - схлопывание мусорных символов
-
-    Поведение безопасное и детерминированное,
-    подходит для сравнения, логов, ассоциаций.
-    """
+    """Текст для сравнения: NFKD, нижний регистр, без мусора и лишних пробелов."""
     if text is None:
         return ""
 
@@ -1838,35 +1524,18 @@ def NormalizeText(text: str) -> str:
     except Exception:
         return ""
 
-    # Unicode normalize
     s = unicodedata.normalize("NFKD", s)
 
-    # lowercase
     s = s.lower()
 
-    # заменить всё кроме букв/цифр на пробел
     s = re.sub(r"[^0-9a-zа-яё]+", " ", s, flags=re.IGNORECASE)
 
-    # схлопнуть пробелы
     s = re.sub(r"\s+", " ", s).strip()
 
     return s
-# -----------------------------
-# Time formatting helper
-# v4.22 compatibility
-# -----------------------------
 
 def FormatElapsed(seconds: float) -> str:
-    """
-    Форматирует прошедшее время в читабельный вид.
-    Примеры:
-      5        -> 00:00:05
-      65       -> 00:01:05
-      3671     -> 01:01:11
-      93784    -> 1д 02:03:04
-
-    Используется для логов, Telegram, статуса.
-    """
+    """Секунды -> 01:01:11 или 1д 02:03:04."""
     try:
         sec = int(seconds)
     except Exception:
@@ -1884,19 +1553,9 @@ def FormatElapsed(seconds: float) -> str:
     else:
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
-# -----------------------------
-# ETA formatting helper
-# v4.22 compatibility
-# -----------------------------
 
 def FormatETA(seconds: float) -> str:
-    """
-    Форматирует ETA (оставшееся время).
-    Правила:
-      - None/NaN/ошибка -> "ETA ?"
-      - <=0 -> "ETA 00:00:00"
-      - >0  -> "ETA 00:MM:SS" / "ETA HH:MM:SS" / "ETA 2д HH:MM:SS"
-    """
+    """Оставшееся время -> 'ETA 00:01:05'."""
     try:
         if seconds is None:
             return "ETA ?"
@@ -1915,19 +1574,9 @@ def FormatETA(seconds: float) -> str:
         return f"ETA {days}д {hours:02d}:{minutes:02d}:{seconds:02d}"
     else:
         return f"ETA {hours:02d}:{minutes:02d}:{seconds:02d}"
-# -----------------------------
-# Status bar / progress helper
-# v4.22 compatibility
-# -----------------------------
 
 def MakeStatusBar(current: int, total: int, width: int = 20) -> str:
-    """
-    Возвращает текстовый progress-bar.
-    Используется для print / Telegram / Status.
-
-    Пример:
-      [████████░░░░░░░░░░░░] 40% (4/10)
-    """
+    """[████░░░░] 40% (4/10)"""
     try:
         cur = int(current)
         tot = int(total)
@@ -1950,35 +1599,22 @@ def MakeStatusBar(current: int, total: int, width: int = 20) -> str:
     return f"[{bar}] {pct:3d}% ({cur}/{tot})"
 
 def ClearStatusBar() -> None:
-    """
-    Очищает строку прогресса в консоли/терминале.
-    В v4.20 могло использоваться для "сброса" статуса после завершения.
-    """
+    """Стирает строку прогресса в консоли."""
     try:
-        # carriage return + очистка строки
         print("\r" + " " * 140 + "\r", end="", flush=True)
     except Exception:
-        # если stdout/консоль недоступны — молча игнорируем
         pass
 
-# =============================
-# Colorama shim (Fore / Style)
-# Совместимость с main.py 4.20–4.22
-# =============================
 
 try:
     from colorama import Fore as _Fore, Style as _Style
 except Exception:
-    # Fallback если colorama не установлена
     class _Fore:
         BLACK = RED = GREEN = YELLOW = BLUE = MAGENTA = CYAN = WHITE = RESET = ""
 
     class _Style:
         DIM = NORMAL = BRIGHT = RESET_ALL = ""
 
-# Экспортируем ожидаемые имена
 Fore = _Fore
 Style = _Style
-
-#||||||| v4.22 compatibility helper  ||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
 

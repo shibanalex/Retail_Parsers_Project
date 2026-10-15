@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.abspath(
 
 import config
 from parsers_core.utils import update_retail_points
+from parsers_core.names import retail_name
 from . import winelab_utils
 from .winelab_utils import (
     bootstrap_session_and_driver,
@@ -20,13 +21,13 @@ from .winelab_utils import (
 
 DEBUG_DIR = os.path.join(os.path.dirname(__file__), "debug_dump")
 
-_URL = "https://www.winelab.ru/"
-RETAIL = getattr(config, "parsers", {}).get(_URL, "ВинЛаб")
+SITE_URL = "https://www.winelab.ru/"
 LAST_HTTP_STATUS = None
 
 
-def get_all_data(shop_name=RETAIL, proxy=None):
+def get_all_data(shop_name=None, proxy=None):
     global LAST_HTTP_STATUS
+    shop_name = shop_name or retail_name(SITE_URL)
     from parsers_core.exceptions import NoShopsError
 
     cities = getattr(config, "cities", [])

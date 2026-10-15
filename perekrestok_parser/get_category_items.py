@@ -5,12 +5,7 @@ import random
 
 
 def get_items_ids(category_id: int, shop_id: int) -> list:
-    """
-    Get items ids by category
-    :param category_id: id of category.
-    :param shop_id: id of shop.
-    :return: list of items ids.
-    """
+    """ID товаров категории в магазине."""
     for retry in range(10):
         items_data = get_category_data(category_id, shop_id)
         if not items_data or not isinstance(items_data, dict):

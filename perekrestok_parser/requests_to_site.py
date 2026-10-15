@@ -237,7 +237,6 @@ def _build_selenium_options(proxy_url: str | None) -> Options:
     options.add_argument(f"--user-agent={_get_user_agent()}")
     options.add_argument("--disable-infobars")
     
-
     options.add_argument("--ignore-certificate-errors")
     options.add_argument("--ignore-ssl-errors")
 
@@ -669,7 +668,7 @@ def _get_or_create_driver(proxy: str | None, main_url: str = site_url):
             if _driver_proxy_cm:
                 try:
                     _driver_proxy_cm.__exit__(None, None, None)
-                except:
+                except Exception:
                     pass
 
     options = _build_selenium_options(None) 
@@ -698,7 +697,7 @@ def _get_or_create_driver(proxy: str | None, main_url: str = site_url):
     if _shared_is_forbidden_ban(_startup_html):
         try:
             driver.quit()
-        except:
+        except Exception:
             pass
         raise ProxyBlockedError("Forbidden ban detected")
 

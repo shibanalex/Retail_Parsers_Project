@@ -27,7 +27,7 @@ def local_proxy_for(proxy):
     yield proxy, None
 
 def _init_uc_driver(headless: bool, locale: str, proxy: Optional[str]):
-    """Создает браузер с привязкой профиля для сохранения кук и обхода защит"""
+    """Браузер с постоянным профилем, чтобы куки переживали перезапуск."""
     options = uc.ChromeOptions()
     
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -35,7 +35,6 @@ def _init_uc_driver(headless: bool, locale: str, proxy: Optional[str]):
     profile_dir = os.path.join(current_dir, "pyaterochka_profile")
     options.add_argument(f"--user-data-dir={profile_dir}")
     
-
     options.add_argument(f"--lang={locale}")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -55,7 +54,7 @@ def _init_uc_driver(headless: bool, locale: str, proxy: Optional[str]):
             browser_executable_path=chrome_path,
             version_main=146
         )
-    except:
+    except Exception:
         driver = uc.Chrome(
             options=options,
             headless=headless,
@@ -88,15 +87,14 @@ def pyaterochka_driver(headless: bool = False, locale: str = "ru-RU", proxy: Opt
     driver = _init_uc_driver(headless=headless, locale=locale, proxy=proxy)
     try:
         driver.get("https://5ka.ru/")
-        
-        # ! ВЫЗОВ ОБХОДА КАПЧИ !
+
         bypass_pyaterochka_antibot(driver, timeout=startup_timeout_s)
         
         yield driver
     finally:
         try:
             driver.quit()
-        except:
+        except Exception:
             pass
 
 @contextmanager

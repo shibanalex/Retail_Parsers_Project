@@ -1,6 +1,3 @@
-"""
-Настройка логгера
-"""
 import logging
 import sys
 from datetime import datetime
@@ -13,45 +10,28 @@ def setup_logger(
     log_level: str = None,
     log_file: str = None
 ) -> logging.Logger:
-    """
-    Настройка логгера
-    
-    Args:
-        name: Имя логгера
-        log_level: Уровень логирования (DEBUG, INFO, WARNING, ERROR)
-        log_file: Путь к файлу логов
-    
-    Returns:
-        Настроенный логгер
-    """
-    # Получаем настройки из конфига
+    """Логгер в консоль и, если задан log_file, в файл."""
     if log_level is None:
         log_level = cfg.get_str("", "LOG_LEVEL", "INFO").upper()
     
     if log_file is None:
         log_file = cfg.get_str("", "LOG_FILE", "parser.log")
-    
-    # Создаем логгер
+
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, log_level, logging.INFO))
-    
-    # Очищаем существующие обработчики
+
     logger.handlers.clear()
-    
-    # Форматтер
+
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
-    
-    # Консольный обработчик
+
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
-    
-    # Файловый обработчик
+
     if log_file:
-        # Создаем директорию для логов если нужно
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -63,10 +43,8 @@ def setup_logger(
 
 
 def get_logger(name: str = "parser") -> logging.Logger:
-    """Получение логгера по имени"""
     logger = logging.getLogger(name)
-    
-    # Если логгер еще не настроен, настраиваем
+
     if not logger.handlers:
         setup_logger(name)
     
@@ -74,7 +52,7 @@ def get_logger(name: str = "parser") -> logging.Logger:
 
 
 def log_execution_time(func):
-    """Декоратор для логирования времени выполнения"""
+    """Декоратор: пишет в лог время выполнения функции."""
     import time
     import functools
     

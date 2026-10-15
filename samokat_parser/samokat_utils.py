@@ -3,22 +3,17 @@ import random
 import re
 import urllib.parse
 from bs4 import BeautifulSoup
+from parsers_core.settings import smart_sleep
 
 MAX_PRODUCTS_PER_QUERY = 100
 _cached_catalog_products = {}
-
-def smart_sleep(driver, fallback=2.0):
-    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
-        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
-    else:
-        time.sleep(fallback)
 
 def check_and_bypass_waf(page):
     try:
         cookie_btn = page.ele('text:Понятно', timeout=1) or page.ele('text:Принять', timeout=1)
         if cookie_btn:
             cookie_btn.click()
-    except:
+    except Exception:
         pass
 
 def set_city(driver, city_name, shop_name):
@@ -111,7 +106,6 @@ def get_product_links(driver, query, shop_name):
                         
                     name = item.get('name', 'Неизвестный товар')
                     
-                    
                     volume, weight = "", ""
                     net_unit = item.get('attributes', {}).get('netContentUnit', '')
                     variants = item.get('variants', {}).get('items', [])
@@ -122,7 +116,6 @@ def get_product_links(driver, query, shop_name):
                             volume = f"{val} {net_unit.lower()}"
                         elif net_unit == 'G' or net_unit == 'KG':
                             weight = f"{val} {net_unit.lower()}"
-                    
                     
                     if not volume and not weight:
                         txt_lower = name.lower()
@@ -169,7 +162,7 @@ def get_product_links(driver, query, shop_name):
         print(f"[{shop_name}] Ошибка при поиске '{query}': {e}")
         try:
             page.listen.stop()
-        except:
+        except Exception:
             pass
         return []
 
@@ -225,7 +218,7 @@ def parse_product(driver, product_url, retail_name, city_name, shop_name):
             try:
                 p = float(cleaned.rstrip('.'))
                 if p > 0: prices.append(p)
-            except: pass
+            except Exception: pass
                 
         if prices:
             prices = sorted(list(set(prices)))

@@ -1,20 +1,3 @@
-# ============================================================
-# parsers_core/proxy_utils.py
-#
-# ver 3.02-proxy (2026-02-05)
-# ------------------------------------------------------------
-# CHANGELOG:
-#  - Перевели ручной выключатель прокси на busy = -1 (MANUAL OFF)
-#  - Теперь:
-#       busy =  0  свободен
-#       busy =  1  занят (TTL освободит)
-#       busy = -1  выключен вручную (никогда не используется, кодом не трогается)
-#  - Убрали фильтр priority != -1 как "выключатель" (priority остаётся статистикой/весом)
-#  - Добавили полную совместимость со старым интерфейсом:
-#       ProxyPool, rotate_proxy, get_proxy_list, get_proxy_manager, should_use_proxy,
-#       quick_proxy_check, check_proxy_health, get_healthy_proxy, ensure_proxy_healthy, __all__
-# ============================================================
-
 import os
 import sqlite3
 import random
@@ -25,17 +8,10 @@ from typing import Optional, Dict, Tuple
 import requests
 
 
-# ============================================================
-# CONSTANTS (KP)
-# ============================================================
-
-BUSY_TTL_SECONDS = 300        # ⏱️ 5 минут — автоосвобождение busy=1
+# Колонка busy: 0 — свободен, 1 — занят (снимается через BUSY_TTL_SECONDS), -1 — выключен вручную, код его не трогает
+BUSY_TTL_SECONDS = 300
 PROXY_TEST_TIMEOUT = 15
 
-
-# ============================================================
-# HELPERS
-# ============================================================
 
 def now_iso() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -47,10 +23,6 @@ def iso_to_dt(val: str) -> Optional[datetime]:
     except Exception:
         return None
 
-
-# ============================================================
-# PROTOCOL HELPERS (оставлены для совместимости)
-# ============================================================
 
 def detect_protocol_by_port(port):
     if not isinstance(port, (int, str)):
@@ -131,10 +103,6 @@ def detect_protocol_full(proxy_data):
     return 'http'
 
 
-# ============================================================
-# MAIN CLASS
-# ============================================================
-
 class ProxyManager:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -142,15 +110,8 @@ class ProxyManager:
     def _connect(self):
         return sqlite3.connect(self.db_path, timeout=30)
 
-    # --------------------------------------------------------
-    # BUSY TTL CLEANUP (only busy=1)
-    # --------------------------------------------------------
-
     def _release_stale_busy(self):
-        """
-        Освобождает прокси, которые зависли в busy=1 дольше TTL.
-        busy=-1 (manual off) не трогаем.
-        """
+        """Снимает busy=1 с прокси, зависших дольше TTL."""
         cutoff = datetime.now() - timedelta(seconds=BUSY_TTL_SECONDS)
 
         with self._connect() as con:
@@ -173,20 +134,11 @@ class ProxyManager:
                     """, (pid,))
             con.commit()
 
-    # --------------------------------------------------------
-    # GET NEXT FREE PROXY (busy=0 only)
-    # --------------------------------------------------------
-
     def get_next_free_proxy(self, exclude_current=False):
         return self.get_next_proxy()
 
     def get_next_proxy(self) -> Optional[Dict]:
-        """
-        Берем СВОБОДНЫЙ прокси:
-          busy=0  подходит
-          busy=1  занят
-          busy=-1 отключен вручную (никогда не берём)
-        """
+        """Свободный прокси (busy=0)."""
         self._release_stale_busy()
 
         with self._connect() as con:
@@ -210,10 +162,6 @@ class ProxyManager:
 
         return dict(random.choice(rows))
 
-    # --------------------------------------------------------
-    # requests.proxies builder
-    # --------------------------------------------------------
-
     def build_requests_proxy(self, row: Dict) -> Dict:
         ip = row.get("ip")
         port = row.get("port")
@@ -221,7 +169,6 @@ class ProxyManager:
         psw = row.get("psw")
         socks = row.get("socks")
 
-        # если socks пустой/0 — считаем SOCKS5 (ваша логика)
         scheme = "socks4" if socks == 4 else "socks5"
         auth = f"{user}:{psw}@" if user and psw else ""
         proxy_url = f"{scheme}://{auth}{ip}:{port}"
@@ -236,14 +183,7 @@ class ProxyManager:
             info += f" [{proxy_row['note']}]"
         return info
 
-    # --------------------------------------------------------
-    # BUSY CONTROL (protect busy=-1)
-    # --------------------------------------------------------
-
     def mark_busy(self, proxy_id: int):
-        """
-        busy=1 только если proxy не выключен вручную (busy!=-1)
-        """
         with self._connect() as con:
             cur = con.cursor()
             cur.execute("""
@@ -256,9 +196,6 @@ class ProxyManager:
             con.commit()
 
     def mark_free(self, proxy_id: int):
-        """
-        busy=0 только если proxy не выключен вручную (busy!=-1)
-        """
         with self._connect() as con:
             cur = con.cursor()
             cur.execute("""
@@ -268,10 +205,6 @@ class ProxyManager:
                   AND busy != -1
             """, (proxy_id,))
             con.commit()
-
-    # --------------------------------------------------------
-    # STATS
-    # --------------------------------------------------------
 
     def mark_attempt(self, proxy_id: int, success: bool):
         with self._connect() as con:
@@ -292,10 +225,6 @@ class ProxyManager:
                     WHERE id = ?
                 """, (now_iso(), proxy_id))
             con.commit()
-
-    # --------------------------------------------------------
-    # TEST PROXY
-    # --------------------------------------------------------
 
     def test_proxy(self, row: Dict,
                    test_url: str = "https://httpbin.org/ip",
@@ -321,10 +250,6 @@ class ProxyManager:
         except Exception:
             return False
 
-    # --------------------------------------------------------
-    # FULL CYCLE GET WORKING PROXY
-    # --------------------------------------------------------
-
     def get_working_proxy(self, test_url: str = "https://httpbin.org/ip") -> Optional[Dict]:
         tried = set()
 
@@ -338,7 +263,6 @@ class ProxyManager:
                 return None
             tried.add(pid)
 
-            # блокируем
             self.mark_busy(pid)
 
             ok = False
@@ -351,12 +275,7 @@ class ProxyManager:
             if ok:
                 return row
 
-            # не подошёл — освобождаем
             self.mark_free(pid)
-
-    # --------------------------------------------------------
-    # PRIORITY RECALC (optional)
-    # --------------------------------------------------------
 
     def recalc_priorities(self):
         with self._connect() as con:
@@ -376,10 +295,6 @@ class ProxyManager:
             con.commit()
 
 
-# ============================================================
-# COMPAT LAYER FUNCTIONS
-# ============================================================
-
 def should_use_proxy(proxy_path: str) -> Tuple[bool, str]:
     if not proxy_path:
         return False, ""
@@ -394,10 +309,7 @@ def should_use_proxy(proxy_path: str) -> Tuple[bool, str]:
 
 
 def rotate_proxy(db_path: str = None) -> Optional[Dict]:
-    """
-    Упрощенная функция ротации прокси.
-    Совместимость: если db_path None — пробуем достать из config_loader или config.py
-    """
+    """Следующий рабочий прокси. Без db_path путь берётся из конфига."""
     if db_path is None:
         try:
             from .config_loader import cfg
@@ -469,10 +381,6 @@ def get_proxy_manager(db_path: str = None) -> ProxyManager:
     return get_proxy_manager._instance
 
 
-# ============================================================
-# HEALTH CHECK (compat)
-# ============================================================
-
 def quick_proxy_check(proxy_dict: Dict,
                       test_url: str = "https://google.com",
                       timeout: int = 5) -> bool:
@@ -514,7 +422,6 @@ def check_proxy_health(pm: ProxyManager, proxy_id: int,
             elapsed_ms = int((time.time() - t0) * 1000)
 
             if resp.status_code == 200:
-                # optional: если колонки нет — просто пропустим
                 try:
                     with pm._connect() as con:
                         cur = con.cursor()
@@ -564,7 +471,6 @@ def get_healthy_proxy(pm: ProxyManager,
             pm.mark_busy(proxy_id)
             return proxy, ""
 
-        # если не ок — учитываем как fail и освобождаем
         try:
             pm.mark_attempt(proxy_id, success=False)
         except Exception:
@@ -603,14 +509,8 @@ def ensure_proxy_healthy(pm: ProxyManager, proxy_id: int, target_site: str = Non
     return True, f"OK ({ms} ms)"
 
 
-# ============================================================
-# ProxyPool (REQUIRED BY IMPORTS)
-# ============================================================
-
 class ProxyPool:
-    """
-    Упрощенный пул прокси для совместимости со старым кодом.
-    """
+    """Простой пул прокси для старого кода."""
     def __init__(self, proxies: list = None):
         self.proxies = proxies or []
         self.good_proxies = self.proxies.copy()
@@ -628,10 +528,6 @@ class ProxyPool:
         self.proxies = get_proxy_list(db_path=db_path)
         self.good_proxies = self.proxies.copy()
 
-
-# ============================================================
-# EXPORTS
-# ============================================================
 
 __all__ = [
     'ProxyManager',

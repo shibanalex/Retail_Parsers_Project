@@ -3,6 +3,8 @@ import random
 import re
 import sys
 import os
+from parsers_core.settings import smart_sleep
+from parsers_core.normalize import split_name_measure
 
 try:
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -10,17 +12,11 @@ try:
 except ImportError:
     config = None
 
-MAX_PRODUCTS_PER_QUERY = 10
+MAX_PRODUCTS_PER_QUERY = 100
 _cached_catalog_products = {}
 
 
 _current_city_shops = []
-
-def smart_sleep(driver, fallback=2.0):
-    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
-        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
-    else:
-        time.sleep(fallback)
 
 def check_and_bypass_waf(driver, shop_name):
     return True
@@ -33,7 +29,6 @@ def set_city(driver, city_name, shop_name):
     
     city_lower = city_name.lower().strip()
     url = "https://backend-v2.shop.gulliver-ul.ru/api/v1.1/customer/graph?platform=web&dt=web&av=4.1.0"
-    
     
     graphql_query_shops = """
     query shopsInGeoPolygon($corners: [GeoPointInput]!, $useZone: Boolean, $customerType: String) {
@@ -67,7 +62,6 @@ def set_city(driver, city_name, shop_name):
             
         data = resp.json()
         shops = data.get("data", {}).get("shopsInGeoPolygon", [])
-        
         
         for shop in shops:
             address = shop.get("address", "")
@@ -146,12 +140,10 @@ def get_product_links(driver, query, shop_name):
     }
     """
 
-    
     valid_brands = []
     if config and hasattr(config, 'brand'):
         valid_brands = [str(b).strip().lower() for b in config.brand if str(b).strip()]
 
-    
     for shop in _current_city_shops:
         shop_id = shop["id"]
         shop_address = shop["address"]
@@ -202,11 +194,6 @@ def get_product_links(driver, query, shop_name):
                     brand = item.get("brand") or {}
                     brand_name = brand.get("name", "")
                     
-                    
-                    
-                    
-                    
-                    
                     if valid_brands:
                         matched = False
                         for vb in valid_brands:
@@ -248,15 +235,14 @@ def get_product_links(driver, query, shop_name):
                     
                     volume, weight = extract_volume_weight(name, pkg)
                     
-                    
                     cache_key = f"{prod_url}:::{shop_id}"
                     
                     _cached_catalog_products[cache_key] = {
-                        "Название продукта": name,
+                        "Название продукта": split_name_measure(name)[0],
                         "Цена": price_base,
-                        "Цена по акции": price_promo,
-                        "Остаток": int(stock_amount),
-                        "Рейтинг": rating,
+                        "Цена по акции": price_promo or 0.0,
+                        "Остаток": "1" if float(stock_amount or 0) > 0 else "0",
+                        "Рейтинг": rating or 0.0,
                         "Фото товара": photo,
                         "Бренд": brand_name,
                         "GTIN": gtin,
@@ -291,7 +277,6 @@ def get_product_links(driver, query, shop_name):
 
 def parse_product(driver, product_url, retail_name, city_name, shop_name):
     global _cached_catalog_products
-    
     
     if product_url in _cached_catalog_products:
         c = _cached_catalog_products[product_url]

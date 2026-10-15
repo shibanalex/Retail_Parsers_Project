@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-import configparser
-import os
-import random
 import re
 import time
 
 import requests
+
+from parsers_core.categories import city_in
+from parsers_core.debug_dump import dump_debug as _dump
+from parsers_core.normalize import norm_measure, split_name_measure, split_regular_promo
+from parsers_core.rows import make_row
+from parsers_core.settings import smart_sleep as _core_sleep
 
 API_URL = "https://api.yarcheplus.ru/api/graphql"
 HOME_URL = "https://yarcheplus.ru/"
@@ -33,32 +36,12 @@ LAST_HTTP_STATUS = None
 
 
 def is_served_city(city):
-    name = (city or "").strip().lower()
-    return any(name in known or known in name for known in KNOWN_CITIES)
-
-
-def _read_delays(section="YARCHE"):
-    cfg_path = os.path.join(os.path.dirname(os.path.dirname(
-        os.path.abspath(__file__))), "parsers_core", "share_parsers.cfg")
-    min_delay, max_delay = 1.0, 3.0
-    if os.path.exists(cfg_path):
-        cp = configparser.ConfigParser()
-        try:
-            cp.read(cfg_path, encoding="utf-8")
-            if cp.has_section("BROWSER"):
-                min_delay = cp.getfloat("BROWSER", "min_delay", fallback=min_delay)
-                max_delay = cp.getfloat("BROWSER", "max_delay", fallback=max_delay)
-            if cp.has_section(section):
-                min_delay = cp.getfloat(section, "min_delay", fallback=min_delay)
-                max_delay = cp.getfloat(section, "max_delay", fallback=max_delay)
-        except Exception:
-            pass
-    return min_delay, max_delay
+    """Города доставки Ярче!."""
+    return city_in(city, KNOWN_CITIES)
 
 
 def smart_sleep():
-    lo, hi = _read_delays()
-    time.sleep(random.uniform(lo, hi))
+    _core_sleep(section="YARCHE")
 
 
 def _request(session, method, url, **kw):
@@ -124,15 +107,7 @@ SEARCH_QUERY = """
 
 
 def dump_debug(debug_dir, label, text):
-    if not debug_dir:
-        return
-    os.makedirs(debug_dir, exist_ok=True)
-    path = os.path.join(debug_dir, f"{label}.json")
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text or "")
-    except Exception:
-        pass
+    _dump(debug_dir, label, text, ext=".json")
 
 
 def search_products(session, token, query_text, page_limit=48, max_pages=20, debug_dir=None):
@@ -187,33 +162,6 @@ def filter_by_brand(products, brands):
     return [p for p in products if _matches_brand(p, brands)]
 
 
-_VOL_RE = re.compile(r'(\d+[.,]?\d*)\s*(мл|л|кг|г)(?![а-яёa-z])', re.IGNORECASE)
-
-
-def norm_measure(v):
-    v = (v or "").replace(",", ".").strip()
-    unit = v.split()[-1].lower() if v else ""
-    if unit in ("л", "мл"):
-        return v, ""
-    if unit in ("г", "кг"):
-        return "", v
-    return "", ""
-
-
-def split_name_measure(name):
-    name = name or ""
-    m = _VOL_RE.search(name)
-    if not m:
-        return re.sub(r'\s{2,}', ' ', name).strip(" ,;"), "", ""
-    value = m.group(1).replace(",", ".")
-    unit = m.group(2).lower()
-    clean = (name[:m.start()] + " " + name[m.end():])
-    clean = re.sub(r'\s{2,}', ' ', clean).strip(" ,;")
-    if unit in ("л", "мл"):
-        return clean, f"{value} {unit}", ""
-    return clean, "", f"{value} {unit}"
-
-
 def photo_url(image_id, size="600x600"):
     if not image_id:
         return ""
@@ -222,40 +170,20 @@ def photo_url(image_id, size="600x600"):
 
 
 def to_row(product, shop_name, city):
-    price = product.get("price")
-    previous = product.get("previousPrice")
-    if previous is not None and price is not None and previous > price:
-        regular_price, promo_price = previous, price
-    else:
-        regular_price, promo_price = price, None
-
-    if regular_price is None:
-        return None
-
+    regular, promo = split_regular_promo(product.get("price"), product.get("previousPrice"))
     categories = product.get("categories") or []
-    category = categories[-1]["name"] if categories else ""
 
-    brand = product.get("brand") or ""
-
-    clean_name, name_vol, name_wt = split_name_measure(product.get("name") or "")
+    name, name_vol, name_wt = split_name_measure(product.get("name"))
     api_vol, api_vol_as_wt = norm_measure(product.get("volumeUnit"))
     _, api_wt = norm_measure(product.get("weightUnit"))
-    volume = api_vol or name_vol
-    weight = api_wt or api_vol_as_wt or name_wt
 
-    return {
-        "Сеть": shop_name,
-        "Тип магазина": "Доставка",
-        "Адрес Торговой точки": city,
-        "Бренд": brand,
-        "Название продукта": clean_name,
-        "Цена": float(regular_price),
-        "Фото товара": photo_url((product.get("image") or {}).get("id")),
-        "Ссылка на страницу": f"https://yarcheplus.ru/product/{product.get('code')}-{product.get('id')}",
-        "Объем": volume,
-        "Вес": weight,
-        "Остаток": "1" if product.get("isAvailable") else "0",
-        "Категория": category,
-        "Цена по акции": float(promo_price) if promo_price is not None else 0,
-        "Рейтинг": float(product.get("rating") or 0),
-    }
+    return make_row(
+        shop_name, city, name, regular,
+        store_type="Доставка", brand=product.get("brand"), promo_price=promo,
+        photo=photo_url((product.get("image") or {}).get("id")),
+        url=f"https://yarcheplus.ru/product/{product.get('code')}-{product.get('id')}",
+        rating=product.get("rating"),
+        volume=api_vol or name_vol, weight=api_wt or api_vol_as_wt or name_wt,
+        stock=bool(product.get("isAvailable")),
+        category=categories[-1]["name"] if categories else "",
+    )

@@ -2,6 +2,7 @@ import time
 import random
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException
+from parsers_core.settings import smart_sleep
 
 
 CITY_IDS = {
@@ -18,12 +19,6 @@ CITY_IDS = {
     "челябинск": "a376e68d-724a-4472-be7c-891bdb09ae32",
     "уфа": "7339e834-2cb4-4734-a4c7-1fca2c66e562"
 }
-
-def smart_sleep(driver, fallback=2.0):
-    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
-        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
-    else:
-        time.sleep(fallback)
 
 def check_and_bypass_waf(driver, shop_name):
     page_source = driver.page_source.lower()

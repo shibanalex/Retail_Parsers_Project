@@ -9,12 +9,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException
-
-def smart_sleep(driver, fallback=2.0):
-    if hasattr(driver, 'custom_min_delay') and hasattr(driver, 'custom_max_delay'):
-        time.sleep(random.uniform(driver.custom_min_delay, driver.custom_max_delay))
-    else:
-        time.sleep(fallback)
+from parsers_core.settings import smart_sleep
 
 def force_awake(driver):
     try:
@@ -23,7 +18,7 @@ def force_awake(driver):
             Object.defineProperty(document, 'hidden', {get: () => false});
             document.dispatchEvent(new Event('visibilitychange'));
         """)
-    except:
+    except Exception:
         pass
 
 def check_and_bypass_waf(driver):
@@ -34,13 +29,13 @@ def check_and_bypass_waf(driver):
         )
         driver.execute_script("arguments[0].click();", age_btn)
         time.sleep(1)
-    except:
+    except Exception:
         pass
     
     try:
         cookie = driver.find_element(By.XPATH, '//button[contains(text(), "Согласен") or contains(text(), "Хорошо")]')
         driver.execute_script("arguments[0].click();", cookie)
-    except:
+    except Exception:
         pass
     return True
 
@@ -72,7 +67,7 @@ def select_shop(driver, city_name, visited_addresses, shop_name):
             )
             driver.execute_script("arguments[0].click();", ok_btn)
             time.sleep(2)
-        except:
+        except Exception:
             pass
 
         city_dd = WebDriverWait(driver, 10).until(
@@ -116,7 +111,7 @@ def select_shop(driver, city_name, visited_addresses, shop_name):
                         driver.execute_script("arguments[0].click();", select_btn)
                         smart_sleep(driver, 3)
                         return 200, addr
-                except:
+                except Exception:
                     break
             
             try:
@@ -145,7 +140,7 @@ def select_shop(driver, city_name, visited_addresses, shop_name):
                     last_scrolled_address = current_last_addr
                     scroll_stuck_counter = 0
 
-            except:
+            except Exception:
                 time.sleep(1) 
 
     except TimeoutException:
@@ -261,12 +256,12 @@ def parse_product(driver, url, retail_name, city, address, shop_name):
 
         try:
             brand = driver.find_element(By.XPATH, '//li[.//span[contains(text(), "Бренд")]]/a').text.strip()
-        except: 
+        except Exception: 
             brand = ""
         
         try:
             volume = driver.find_element(By.XPATH, '//li[.//span[contains(text(), "Объем")]]/span[2]').text.strip()
-        except: 
+        except Exception: 
             volume = ""
         
         sku_tag = soup.find('span', class_=re.compile('product-hero__head-item'))

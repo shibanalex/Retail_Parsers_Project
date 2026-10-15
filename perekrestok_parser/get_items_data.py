@@ -14,7 +14,10 @@ from perekrestok_parser.urls import json_path
 from tqdm import tqdm
 from perekrestok_parser.settings import cats, shops, retail_name
 from datetime import datetime
-from config import cities, brand, search_req
+import config
+cities = getattr(config, "cities", [])
+brand = getattr(config, "brand", [])
+search_req = getattr(config, "search_req", [])
 import time
 import random
 
@@ -22,7 +25,6 @@ retail = "Перекресток"
 
 
 def safe_join(value, sep=", "):
-    """Безопасное объединение поддерживает None, строки и списки."""
     if not value:
         return ""
     if isinstance(value, (list, tuple, set)):
@@ -248,10 +250,7 @@ def filter_by_brand(brand, parsed_items):
 
 
 def get_search_legacy(search_req=search_req, cities=cities, brand=brand):
-    """
-    Основная функция поиска и парсинга товаров по запросу (driver-based).
-    Гибридный режим: Город ищем через HTTP, товары собираем через Driver.
-    """
+    """Город ищем через HTTP, товары собираем браузером."""
 
     def get_json_data_w_pagination(sr, shop_id, max_retries=15):
         page = 1
@@ -286,7 +285,6 @@ def get_search_legacy(search_req=search_req, cities=cities, brand=brand):
         stats["Обработано городов"].add(city)
 
         cities_data = get_city_http(city_pattern=city)
-
 
         if not cities_data:
             print(f"HTTP поиск города '{city}' не дал результатов, пробую Selenium...")
@@ -333,7 +331,7 @@ def get_search_legacy(search_req=search_req, cities=cities, brand=brand):
 
 
 def get_search_http(search_req=search_req, cities=cities, brand=brand):
-    """Основная функция поиска и парсинга товаров по запросу (HTTP + Selenium token)."""
+    """Поиск через HTTP, токен берётся из браузера."""
     all_parsed_data = []
     search_pattern = search_req or brand
     stats = {
@@ -378,7 +376,6 @@ def get_search_http(search_req=search_req, cities=cities, brand=brand):
 
 
 def get_search(search_req=search_req, cities=cities, brand=brand):
-    """Основная функция поиска и парсинга товаров по запросу."""
     use_http = os.getenv("PEREKRESTOK_HTTP_SEARCH", "0").lower() in ("1", "true", "yes")
     if use_http:
         return get_search_http(search_req=search_req, cities=cities, brand=brand)
